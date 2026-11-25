@@ -368,19 +368,23 @@
       }
 
       const rKey = `${act.roomId}|${timeKey}`;
+      const room = roomMap.get(act.roomId);
+      const sec = sectionMap.get(act.sectionId);
       if (roomSlots.has(rKey)) {
-        conflicts.push({ type: 'ROOM_CLASH', activities: [roomSlots.get(rKey), act.id], resource: act.roomId, time: timeKey });
+        const clashType = room && room.labType ? 'LAB_CLASH' : 'ROOM_CLASH';
+        conflicts.push({ type: clashType, activities: [roomSlots.get(rKey), act.id], resource: act.roomId, time: timeKey });
       } else {
         roomSlots.set(rKey, act.id);
       }
 
-      const room = roomMap.get(act.roomId);
-      const sec = sectionMap.get(act.sectionId);
       if (room && sec && room.capacity < sec.studentCount) {
         conflicts.push({ type: 'CAPACITY_EXCEEDED', activities: [act.id], resource: act.roomId, capacity: room.capacity, required: sec.studentCount });
       }
       if (act.activityType === 'LAB' && room && room.labType !== act.labType) {
         conflicts.push({ type: 'LAB_TYPE_MISMATCH', activities: [act.id], resource: act.roomId });
+      }
+      if ((act.activityType === 'EXAM' || act.activityType === 'PLACEMENT') && room && room.labType) {
+        conflicts.push({ type: 'ROOM_TYPE_INCOMPATIBLE', activities: [act.id], resource: act.roomId });
       }
     });
 
@@ -394,7 +398,20 @@
     return {
       valid: conflicts.length === 0,
       conflicts,
-      totalActivities: activities.length
+      totalActivities: activities.length,
+      checksSummary: {
+        mandatoryRulesCount: 8,
+        checkedRules: [
+          'FACULTY_CLASH',
+          'ROOM_CLASH',
+          'LAB_CLASH',
+          'SECTION_CLASH',
+          'QUALIFICATION_MISMATCH',
+          'CAPACITY_EXCEEDED',
+          'LAB_TYPE_MISMATCH',
+          'WORKLOAD_EXCEEDED'
+        ]
+      }
     };
   }
 
@@ -662,6 +679,7 @@
    * overnight power outages, actual time-slot overlaps, and occurrence deduplication.
    */
   function simulateFromConfigs(rawState, failureConfigs = []) {
+    const simStartMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const state = cloneState(rawState);
     const refWeek = state.meta.referenceWeek || {};
 
@@ -966,6 +984,14 @@
             SLOTS.forEach((s) => allPairs.push({ date: dStr, slotId: s.id }));
           });
           addBlockedOcc(blockedAdminOcc, cfg.nodeId, allPairs);
+          if (cfg.nodeId === 'ADM-05') {
+            state.labs.forEach((l) => {
+              if (l.requiresNetwork) {
+                addBlockedOcc(blockedRoomOcc, l.id, allPairs);
+                rootAffectedNodes.set(l.id, 'Dependent on Campus Fiber Network (ADM-05)');
+              }
+            });
+          }
         }
       }
     });
@@ -974,8 +1000,23 @@
     const nodeStatus = new Map();
     const nodeImpactReason = new Map();
     const nodeHop = new Map();
+    const nodeRootCauses = new Map(); // nodeId -> Set<rootId>
     const morningBlockedFaculty = new Set();
     const bfsTrace = [];
+
+    function registerRootCause(targetId, causedBy) {
+      if (!nodeRootCauses.has(targetId)) nodeRootCauses.set(targetId, new Set());
+      const roots = nodeRootCauses.get(targetId);
+      if (!causedBy || causedBy === 'ROOT') {
+        roots.add(targetId);
+        return;
+      }
+      if (nodeRootCauses.has(causedBy)) {
+        nodeRootCauses.get(causedBy).forEach((r) => roots.add(r));
+      } else {
+        roots.add(causedBy);
+      }
+    }
 
     graph.nodes.forEach((_, id) => nodeStatus.set(id, 'operational'));
 
@@ -983,6 +1024,7 @@
     const visited = new Set();
 
     function markNode(id, status, hop, reason, causedBy, relation) {
+      registerRootCause(id, causedBy);
       const prev = nodeStatus.get(id);
       if (prev === 'operational' || (prev === 'affected' && status === 'failed')) {
         nodeStatus.set(id, status);
@@ -1012,7 +1054,9 @@
 
     rootAffectedNodes.forEach((reason, id) => {
       if (graph.nodes.has(id)) {
-        markNode(id, 'affected', 1, reason, 'ADM-02', 'supplies_power');
+        const parentRoot = id.startsWith('LAB-') && rootFailedNodes.has('ADM-05') ? 'ADM-05' : 'ADM-02';
+        const rel = parentRoot === 'ADM-05' ? 'provides_network' : 'supplies_power';
+        markNode(id, 'affected', 1, reason, parentRoot, rel);
       }
     });
 
@@ -1307,6 +1351,17 @@
     const rawHealth = 100 - ((downRes / totalResWeight) * 55 + (actPenalty / Math.max(1, graph.activities.length)) * 85);
     const campusHealthPct = Math.max(0, Math.min(100, Math.round(rawHealth * 10) / 10));
 
+    const simEndMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const noScheduledActivitiesOnly = evaluationDates.length > 0 && datesWithNoActivities.length === evaluationDates.length && impactedActivities.length === 0;
+    let zeroImpactExplanation = '';
+    if (failureConfigs.length > 0 && impactedOccurrences.length === 0 && affectedStudents === 0) {
+      if (noScheduledActivitiesOnly) {
+        zeroImpactExplanation = `Target date(s) (${datesWithNoActivities.map(formatDateDMY).join(', ')}) fall on non-academic / unscheduled day(s) with 0 timetable, lab, exam, or placement sessions.`;
+      } else {
+        zeroImpactExplanation = 'No scheduled academic sessions, examinations, or linked student commuters overlap the selected resource(s) and time window (e.g., outside S1–S5 09:00–16:15 slots or unassigned target).';
+      }
+    }
+
     return {
       state,
       graph,
@@ -1316,13 +1371,16 @@
       nodeStatus,
       nodeImpactReason,
       nodeHop,
+      nodeRootCauses,
       morningBlockedFaculty,
       bfsTrace,
       impactedActivities,
       impactedOccurrences,
       evaluationDates,
       datesWithNoActivities,
-      noScheduledActivitiesOnly: evaluationDates.length > 0 && datesWithNoActivities.length === evaluationDates.length && impactedActivities.length === 0,
+      noScheduledActivitiesOnly,
+      zeroImpactExplanation,
+      computationMs: Math.max(0.1, Math.round((simEndMs - simStartMs) * 100) / 100),
       constraintsContext: {
         blockedFacultyOcc,
         blockedRoomOcc,
@@ -1609,6 +1667,7 @@
   }
 
   function solveWithStrategy(cascadeResult, strat) {
+    const solveStartMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const recoveredState = cloneState(cascadeResult.state);
     const {
       nodeStatus,
@@ -1716,6 +1775,61 @@
       return true;
     }
 
+    function diagnoseFacultyRejection(fac, act, dateStr, slotId, weekMon) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      const fBlocked = blockedFacultyOcc.get(fac.id);
+      if (fBlocked && fBlocked.has(occSlotKey)) return 'offline/absent in slot';
+      if (busyFacultyOcc.has(`${fac.id}|${occSlotKey}`)) return `double-booked (${slotId})`;
+      const wLoad = facultyWeekLoad.get(`${fac.id}|${weekMon}`) || 0;
+      if (wLoad + 1 > fac.maxWeeklyLoad) return `load cap (${wLoad}/${fac.maxWeeklyLoad} hrs)`;
+      if (act.subjectId && !fac.qualifications.includes(act.subjectId)) return `lacks ${act.subjectId}`;
+      if (!act.subjectId && fac.department !== act.department) return `dept ${fac.department} ≠ ${act.department}`;
+      return null;
+    }
+
+    function diagnoseRoomRejection(room, act, requiredSeats, dateStr, slotId) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      if (!isRoomTypeCompatible(room, act)) {
+        return act.activityType === 'LAB'
+          ? `lab type ${room.labType || 'room'} ≠ ${act.labType}`
+          : `incompatible type (${room.labType || room.type})`;
+      }
+      const effCap = getEffectiveRoomCapacity(room, dateStr, slotId, act.id);
+      if (effCap === 0) return 'offline / unpowered';
+      if (effCap < requiredSeats) return `capacity ${effCap} < ${requiredSeats} seats`;
+      if (busyRoomOcc.has(`${room.id}|${occSlotKey}`)) return `occupied (${slotId})`;
+      return null;
+    }
+
+    function collectCandidateRejections(origDate, origSlotId, act, sec, chosenFacId, chosenRoomId) {
+      const rejFac = [];
+      const rejRoom = [];
+      const wMon = getWeekMondayISO(origDate);
+      ensureDateSeeded(origDate);
+      ensureWeekSeeded(wMon);
+      const deptFacs = recoveredState.faculty.filter((f) => f.department === act.department || (act.subjectId && f.qualifications.includes(act.subjectId)));
+      for (const f of deptFacs) {
+        if (f.id === chosenFacId) continue;
+        const r = diagnoseFacultyRejection(f, act, origDate, origSlotId, wMon);
+        if (r) {
+          rejFac.push(`${f.id}: ${r}`);
+          if (rejFac.length >= 3) break;
+        }
+      }
+      const poolRooms = act.activityType === 'LAB'
+        ? recoveredState.labs
+        : recoveredState.classrooms.filter((c) => c.department === act.department || c.department === 'CENTRAL');
+      for (const rm of poolRooms) {
+        if (rm.id === chosenRoomId) continue;
+        const r = diagnoseRoomRejection(rm, act, sec.studentCount, origDate, origSlotId);
+        if (r) {
+          rejRoom.push(`${rm.id}: ${r}`);
+          if (rejRoom.length >= 3) break;
+        }
+      }
+      return { rejectedFaculty: rejFac, rejectedRooms: rejRoom };
+    }
+
     function getEffectiveRoomCapacity(room, dateStr, slotId, activityId = null) {
       const occSlotKey = `${dateStr}|${slotId}`;
       const rBlocked = blockedRoomOcc.get(room.id);
@@ -1758,6 +1872,61 @@
         return false;
       }
       return true;
+    }
+
+    function diagnoseFacultyRejection(fac, act, dateStr, slotId, weekMon) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      const fBlocked = blockedFacultyOcc.get(fac.id);
+      if (fBlocked && fBlocked.has(occSlotKey)) return 'offline/absent in slot';
+      if (busyFacultyOcc.has(`${fac.id}|${occSlotKey}`)) return `double-booked (${slotId})`;
+      const wLoad = facultyWeekLoad.get(`${fac.id}|${weekMon}`) || 0;
+      if (wLoad + 1 > fac.maxWeeklyLoad) return `load cap (${wLoad}/${fac.maxWeeklyLoad} hrs)`;
+      if (act.subjectId && !fac.qualifications.includes(act.subjectId)) return `lacks ${act.subjectId}`;
+      if (!act.subjectId && fac.department !== act.department) return `dept ${fac.department} ≠ ${act.department}`;
+      return null;
+    }
+
+    function diagnoseRoomRejection(room, act, requiredSeats, dateStr, slotId) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      if (!isRoomTypeCompatible(room, act)) {
+        return act.activityType === 'LAB'
+          ? `lab type ${room.labType || 'room'} ≠ ${act.labType}`
+          : `incompatible type (${room.labType || room.type})`;
+      }
+      const effCap = getEffectiveRoomCapacity(room, dateStr, slotId, act.id);
+      if (effCap === 0) return 'offline / unpowered';
+      if (effCap < requiredSeats) return `capacity ${effCap} < ${requiredSeats} seats`;
+      if (busyRoomOcc.has(`${room.id}|${occSlotKey}`)) return `occupied (${slotId})`;
+      return null;
+    }
+
+    function collectCandidateRejections(origDate, origSlotId, act, sec, chosenFacId, chosenRoomId) {
+      const rejFac = [];
+      const rejRoom = [];
+      const wMon = getWeekMondayISO(origDate);
+      ensureDateSeeded(origDate);
+      ensureWeekSeeded(wMon);
+      const deptFacs = recoveredState.faculty.filter((f) => f.department === act.department || (act.subjectId && f.qualifications.includes(act.subjectId)));
+      for (const f of deptFacs) {
+        if (f.id === chosenFacId) continue;
+        const r = diagnoseFacultyRejection(f, act, origDate, origSlotId, wMon);
+        if (r) {
+          rejFac.push(`${f.id}: ${r}`);
+          if (rejFac.length >= 3) break;
+        }
+      }
+      const poolRooms = act.activityType === 'LAB'
+        ? recoveredState.labs
+        : recoveredState.classrooms.filter((c) => c.department === act.department || c.department === 'CENTRAL');
+      for (const rm of poolRooms) {
+        if (rm.id === chosenRoomId) continue;
+        const r = diagnoseRoomRejection(rm, act, sec.studentCount, origDate, origSlotId);
+        if (r) {
+          rejRoom.push(`${rm.id}: ${r}`);
+          if (rejRoom.length >= 3) break;
+        }
+      }
+      return { rejectedFaculty: rejFac, rejectedRooms: rejRoom };
     }
 
     function computeCandidateObjective(ts, fac, room, act, origRoom, sec, weekMon) {
@@ -1992,6 +2161,61 @@
         }
       }
       return true;
+    }
+
+    function diagnoseFacultyRejection(fac, act, dateStr, slotId, weekMon) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      const fBlocked = blockedFacultyOcc.get(fac.id);
+      if (fBlocked && fBlocked.has(occSlotKey)) return 'offline/absent in slot';
+      if (busyFacultyOcc.has(`${fac.id}|${occSlotKey}`)) return `double-booked (${slotId})`;
+      const wLoad = facultyWeekLoad.get(`${fac.id}|${weekMon}`) || 0;
+      if (wLoad + 1 > fac.maxWeeklyLoad) return `load cap (${wLoad}/${fac.maxWeeklyLoad} hrs)`;
+      if (act.subjectId && !fac.qualifications.includes(act.subjectId)) return `lacks ${act.subjectId}`;
+      if (!act.subjectId && fac.department !== act.department) return `dept ${fac.department} ≠ ${act.department}`;
+      return null;
+    }
+
+    function diagnoseRoomRejection(room, act, requiredSeats, dateStr, slotId) {
+      const occSlotKey = `${dateStr}|${slotId}`;
+      if (!isRoomTypeCompatible(room, act)) {
+        return act.activityType === 'LAB'
+          ? `lab type ${room.labType || 'room'} ≠ ${act.labType}`
+          : `incompatible type (${room.labType || room.type})`;
+      }
+      const effCap = getEffectiveRoomCapacity(room, dateStr, slotId, act.id);
+      if (effCap === 0) return 'offline / unpowered';
+      if (effCap < requiredSeats) return `capacity ${effCap} < ${requiredSeats} seats`;
+      if (busyRoomOcc.has(`${room.id}|${occSlotKey}`)) return `occupied (${slotId})`;
+      return null;
+    }
+
+    function collectCandidateRejections(origDate, origSlotId, act, sec, chosenFacId, chosenRoomId) {
+      const rejFac = [];
+      const rejRoom = [];
+      const wMon = getWeekMondayISO(origDate);
+      ensureDateSeeded(origDate);
+      ensureWeekSeeded(wMon);
+      const deptFacs = recoveredState.faculty.filter((f) => f.department === act.department || (act.subjectId && f.qualifications.includes(act.subjectId)));
+      for (const f of deptFacs) {
+        if (f.id === chosenFacId) continue;
+        const r = diagnoseFacultyRejection(f, act, origDate, origSlotId, wMon);
+        if (r) {
+          rejFac.push(`${f.id}: ${r}`);
+          if (rejFac.length >= 3) break;
+        }
+      }
+      const poolRooms = act.activityType === 'LAB'
+        ? recoveredState.labs
+        : recoveredState.classrooms.filter((c) => c.department === act.department || c.department === 'CENTRAL');
+      for (const rm of poolRooms) {
+        if (rm.id === chosenRoomId) continue;
+        const r = diagnoseRoomRejection(rm, act, sec.studentCount, origDate, origSlotId);
+        if (r) {
+          rejRoom.push(`${rm.id}: ${r}`);
+          if (rejRoom.length >= 3) break;
+        }
+      }
+      return { rejectedFaculty: rejFac, rejectedRooms: rejRoom };
     }
 
     const actions = [];
@@ -2408,18 +2632,16 @@
         const origTimeText = origSlotObj ? `${formatTime12h(origSlotObj.startTime)}–${formatTime12h(origSlotObj.endTime)}` : act.slotId;
         const effCap = getEffectiveRoomCapacity(bestSolution.room, bestSolution.date, bestSolution.slotId, act.id);
 
-        const constraintsSatisfied = [];
-        if (act.subjectId) constraintsSatisfied.push(`Qualified (${act.subjectId})`);
-        else constraintsSatisfied.push(`Dept Match (${bestSolution.faculty.department})`);
-        constraintsSatisfied.push(`Workload ${assignedWeekLoad}/${bestSolution.faculty.maxWeeklyLoad} hrs`);
-        constraintsSatisfied.push(
-          bestSolution.isSplit
-            ? `Split Cap >= ${sec.studentCount} seats`
-            : `Capacity ${effCap} >= ${sec.studentCount} seats`
-        );
-        if (act.activityType === 'LAB') constraintsSatisfied.push(`Lab Type (${bestSolution.room.labType})`);
-        constraintsSatisfied.push('Zero Double-Booking');
-        constraintsSatisfied.push(timeChanged ? 'Section Free Slot Verified' : 'Original Slot Preserved');
+        const rejectedDiag = collectCandidateRejections(origDate, act.slotId, act, sec, bestSolution.faculty.id, bestSolution.room.id);
+        const constraintsChecked = [
+          { label: act.subjectId ? `Qualified (${act.subjectId})` : `Dept Match (${bestSolution.faculty.department})`, kind: 'Mandatory', passed: true },
+          { label: `Workload ${assignedWeekLoad}/${bestSolution.faculty.maxWeeklyLoad} hrs`, kind: 'Mandatory', passed: assignedWeekLoad <= bestSolution.faculty.maxWeeklyLoad },
+          { label: bestSolution.isSplit ? `Split Cap >= ${sec.studentCount} seats` : `Capacity ${effCap} >= ${sec.studentCount} seats`, kind: 'Mandatory', passed: true },
+          ...(act.activityType === 'LAB' ? [{ label: `Equipment (${bestSolution.room.labType})`, kind: 'Mandatory', passed: true }] : []),
+          { label: 'Zero Double-Booking', kind: 'Mandatory', passed: true },
+          { label: timeChanged ? 'Section Free Slot Verified' : 'Original Slot Preserved', kind: timeChanged ? 'Mandatory' : 'Preference', passed: true }
+        ];
+        const constraintsSatisfied = constraintsChecked.map((c) => c.label);
 
         const reasonParts = [`Date: ${formatDateDMY(bestSolution.date)} (${bestSolution.day}, ${newTimeText}).`];
         if (facChanged) {
@@ -2485,6 +2707,8 @@
           splitSummary: bestSolution.splitSummary || '',
           preemptedFrom: bestSolution.preemptedVictim ? bestSolution.preemptedVictim.id : '',
           constraintsSatisfied,
+          constraintsChecked,
+          rejectedAlternatives: [...rejectedDiag.rejectedFaculty, ...rejectedDiag.rejectedRooms],
           cost: actCost,
           resolved: true,
           explanation: reasonParts.join(' ')
@@ -2503,7 +2727,9 @@
 
         const origSlotObj = SLOTS.find((s) => s.id === act.slotId);
         const origTimeText = origSlotObj ? `${formatTime12h(origSlotObj.startTime)}–${formatTime12h(origSlotObj.endTime)}` : act.slotId;
-        const reason = `No feasible operational ${act.activityType === 'LAB' ? `${act.labType} lab` : 'room/hall'} (>= ${sec.studentCount} usable seats) and qualified free faculty exist without violating hard constraints across ${act.sectionId}'s available slots.`;
+        const rejectedDiag = collectCandidateRejections(origDate, act.slotId, act, sec, null, null);
+        const rejectedList = [...rejectedDiag.rejectedFaculty, ...rejectedDiag.rejectedRooms];
+        const reason = `No feasible operational ${act.activityType === 'LAB' ? `${act.labType} lab` : 'room/hall'} (>= ${sec.studentCount} usable seats) and qualified free faculty exist without violating mandatory constraints${rejectedList.length ? ` (Checked sample blockers — ${rejectedList.join('; ')})` : ''}.`;
 
         actions.push({
           occKey: occ.occKey,
@@ -2538,6 +2764,10 @@
           splitSummary: '',
           preemptedFrom: '',
           constraintsSatisfied: [],
+          constraintsChecked: [
+            { label: `Feasible ${act.activityType === 'LAB' ? act.labType : 'room'} & qualified faculty free`, kind: 'Mandatory', passed: false }
+          ],
+          rejectedAlternatives: rejectedList,
           cost: penalty,
           resolved: false,
           explanation: reason
@@ -2677,11 +2907,23 @@
     affectedStudentsAfter = Math.min(recoveredState.meta.totalStudents, affectedStudentsAfter);
 
     const totalImpacted = impactedOccurrences.length;
-    let recoveryPct = totalImpacted === 0
+    const activityRecoveryPct = totalImpacted === 0
       ? (unreroutedTransitStudents === 0 ? 100 : 0)
       : Math.round((resolvedCount / totalImpacted) * 1000) / 10;
+    const studentsBefore = cascadeResult.metrics.affectedStudents || 0;
+    const studentRecoveryPct = studentsBefore === 0
+      ? 100
+      : Math.round((Math.max(0, studentsBefore - affectedStudentsAfter) / studentsBefore) * 1000) / 10;
+
+    let recoveryPct = activityRecoveryPct;
     if (unresolvedCount > 0 && recoveryPct >= 100) {
-      recoveryPct = 99.9; // Never report 100% when unresolved impacted activities remain
+      recoveryPct = 99.9;
+    } else if (affectedStudentsAfter > 0 && recoveryPct >= 100) {
+      // Never claim 100% overall recovery while residual student exposure remains
+      const blended = totalImpacted === 0
+        ? studentRecoveryPct
+        : Math.round(((activityRecoveryPct * 0.5) + (studentRecoveryPct * 0.5)) * 10) / 10;
+      recoveryPct = Math.min(99.9, blended);
     }
 
     // Faculty workload distribution statistics computed directly from final recoveredState
@@ -2751,7 +2993,9 @@
     const offlineAssets = cascadeResult.failedIds.filter((id) => nodeStatus.get(id) === 'failed');
     const healthExplanation = healthAfter < 100
       ? (unresolvedCount === 0
-        ? `100% of impacted scheduled activities were recovered, but Campus Health remains ${healthAfter}% because failed physical resource(s) (${offlineAssets.slice(0, 4).join(', ')}${offlineAssets.length > 4 ? ', ...' : ''}) stay offline until repaired/restored.`
+        ? (affectedStudentsAfter > 0
+          ? `${resolvedCount}/${totalImpacted} impacted sessions (${activityRecoveryPct}%) were recovered, while ${affectedStudentsAfter} student(s) retain transit/hostel exposure and failed resource(s) (${offlineAssets.slice(0, 4).join(', ')}${offlineAssets.length > 4 ? ', ...' : ''}) stay offline until repaired.`
+          : `100% of impacted scheduled activities were recovered, but Campus Health remains ${healthAfter}% because failed physical resource(s) (${offlineAssets.slice(0, 4).join(', ')}${offlineAssets.length > 4 ? ', ...' : ''}) stay offline until repaired/restored.`)
         : `Campus Health is ${healthAfter}% due to ${unresolvedCount} unresolved activity conflict(s) and ${offlineAssets.length} offline resource(s) (${offlineAssets.slice(0, 3).join(', ')}).`)
       : 'All impacted activities and operational pathways are 100% healthy.';
 
@@ -2767,11 +3011,45 @@
     if (advantages.length === 0) advantages.push(`Recovers ${resolvedCount}/${totalImpacted} impacted occurrences (${recoveryPct}%) with 0 hard conflicts`);
 
     if (unresolvedCount > 0) tradeOffs.push(`Leaves ${unresolvedCount} unresolved conflict(s) & ${affectedStudentsAfter} affected students`);
+    else if (affectedStudentsAfter > 0) tradeOffs.push(`Leaves ${affectedStudentsAfter} transit/hostel student exposure (${studentRecoveryPct}% exposure reduced)`);
     if (rescheduledActivities > 0) tradeOffs.push(`Requires ${rescheduledActivities} time-slot change(s) for sections`);
     if (facultySubstitutions > 0) tradeOffs.push(`Introduces ${facultySubstitutions} faculty substitution(s)`);
     if (overloadSurchargeHrs > 0) tradeOffs.push(`Triggers ${overloadSurchargeHrs} high-utilization faculty surcharge(s)`);
     if (batchSplitCount > 0 || preemptions.length > 0) tradeOffs.push(`Uses operational splitting/preemption to guarantee priority resilience`);
     if (tradeOffs.length === 0) tradeOffs.push(`Low-overhead adjustment (${recoveryCost} relative cost pts)`);
+
+    const solveEndMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const computationMs = Math.max(0.1, Math.round((solveEndMs - solveStartMs) * 100) / 100);
+
+    let selectionRationale = '';
+    if (strat.mode === 'minChange') {
+      selectionRationale = `Preserved ${Math.max(0, resolvedCount - rescheduledActivities)}/${resolvedCount} original slots (${rescheduledActivities} shifted), ${scheduleChanges} total modifications, ${recoveryCost} relative cost pts.`;
+    } else if (strat.mode === 'balancedLoad') {
+      selectionRationale = `Distributed replacements across ${distinctSubstitutesUsed} qualified faculty (utilization σ ${loadStdDev}%, peak ${peakUtilizationPct}%), keeping overload surcharges at ${overloadSurchargeHrs}.`;
+    } else {
+      selectionRationale = `Protected ${criticalRecovered}/${criticalTotal} critical exam/placement sessions (${backupResourceUnits} reserve/UPS placements, ${preemptions.length} preemption(s), ${batchSplitCount} capacity split(s)).`;
+    }
+
+    const conflictTypesSet = new Set(validation.conflicts.map((c) => c.type));
+    const validationGate = {
+      valid: validation.valid,
+      mandatoryTotalCount: 8,
+      mandatoryPassedCount: 8 - conflictTypesSet.size,
+      conflicts: validation.conflicts,
+      blockingReason: validation.valid
+        ? ''
+        : `Blocked by mandatory conflict(s): ${validation.conflicts.slice(0, 3).map((c) => `${c.type} (${c.resource || (c.activities || []).join(',')})`).join('; ')}`,
+      checks: [
+        { rule: 'Faculty Double-Booking', kind: 'Mandatory', passed: !conflictTypesSet.has('FACULTY_CLASH') },
+        { rule: 'Classroom Double-Booking', kind: 'Mandatory', passed: !conflictTypesSet.has('ROOM_CLASH') },
+        { rule: 'Laboratory Double-Booking', kind: 'Mandatory', passed: !conflictTypesSet.has('LAB_CLASH') },
+        { rule: 'Student Section Conflict', kind: 'Mandatory', passed: !conflictTypesSet.has('SECTION_CLASH') },
+        { rule: 'Faculty Subject Qualification', kind: 'Mandatory', passed: !conflictTypesSet.has('QUALIFICATION_MISMATCH') },
+        { rule: 'Room Capacity & Lab Compatibility', kind: 'Mandatory', passed: !conflictTypesSet.has('CAPACITY_EXCEEDED') && !conflictTypesSet.has('LAB_TYPE_MISMATCH') && !conflictTypesSet.has('ROOM_TYPE_INCOMPATIBLE') },
+        { rule: 'Faculty Weekly Load Cap', kind: 'Mandatory', passed: !conflictTypesSet.has('WORKLOAD_EXCEEDED') },
+        { rule: 'Schedule Modification Minimized', kind: 'Optimization', passed: true }
+      ]
+    };
 
     return {
       strategyId: strat.id,
@@ -2787,12 +3065,15 @@
       convergedStrategyIds: [strat.id],
       rankReason: '',
       operationalDifferenceNote: '',
+      selectionRationale,
+      computationMs,
       recoveredState,
       recoveredNodes,
       actions,
       preemptions,
       transitActions,
       validation,
+      validationGate,
       advantages,
       tradeOffs,
       stats: {
@@ -2803,6 +3084,8 @@
         criticalTotal,
         criticalRecovered,
         recoveryPct,
+        activityRecoveryPct,
+        studentRecoveryPct,
         scheduleChanges,
         timetableChanges,
         facultySubstitutions,
@@ -2825,6 +3108,27 @@
     };
   }
 
+  function validateRecoveryPlan(plan) {
+    if (!plan || !plan.recoveredState) {
+      return { valid: false, conflicts: [{ type: 'MISSING_PLAN' }], blockingReason: 'No recovery plan state available.' };
+    }
+    const check = validateSchedule(plan.recoveredState);
+    if (!check.valid) {
+      return {
+        valid: false,
+        conflicts: check.conflicts,
+        blockingReason: `Mandatory constraint violation(s): ${check.conflicts.slice(0, 3).map((c) => c.type).join(', ')}`
+      };
+    }
+    return {
+      valid: true,
+      conflicts: [],
+      totalActivitiesVerified: check.totalActivities,
+      mandatoryRulesCount: check.checksSummary ? check.checksSummary.mandatoryRulesCount : 8,
+      blockingReason: ''
+    };
+  }
+
   global.OMNIS_ENGINE = {
     WEEK_SLOTS,
     RECOVERY_COST_WEIGHTS,
@@ -2843,6 +3147,7 @@
     expandBusDelayWindow,
     getAllActivities,
     validateSchedule,
+    validateRecoveryPlan,
     buildDependencyGraph,
     simulateFromConfigs,
     simulateCascade,

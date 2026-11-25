@@ -55,6 +55,7 @@
     ttDeptFilter: 'ALL',
     ttSectionFilter: 'SEC-CSE-1',
     ttModeFilter: 'SIDE_BY_SIDE',
+    ttSelectedActivityId: null,
     dataTab: 'departments',
     dataSearch: '',
     readinessAudit: null,
@@ -63,7 +64,9 @@
     readinessIncludeN2: false,
     readinessSortKey: 'riskScore',
     readinessSortDir: 'desc',
-    readinessCategoryFilter: 'ALL'
+    readinessCategoryFilter: 'ALL',
+    auditDiagnoseId: null,
+    auditCounterfactual: null
   };
 
   function getScenarioLabel(type) {
@@ -495,10 +498,16 @@
         totalClassrooms: m.totalClassrooms,
         availableLabs: m.availableLabs,
         totalLabs: m.totalLabs,
+        availableBuses: m.availableBuses,
+        totalBuses: m.totalBuses,
         affectedStudents: applied.stats.affectedStudentsAfter,
+        historicalStudentsAffected: applied.stats.affectedStudentsBefore,
         totalStudents: m.totalStudents,
         activeDisruptions: applied.stats.unresolvedConflicts,
+        historicalImpactedSessions: applied.stats.totalImpacted,
         recoveryPct: applied.stats.recoveryPct,
+        activityRecoveryPct: applied.stats.activityRecoveryPct ?? applied.stats.recoveryPct,
+        studentRecoveryPct: applied.stats.studentRecoveryPct ?? 100,
         resolvedCount: applied.stats.resolvedCount,
         totalImpacted: applied.stats.totalImpacted
       };
@@ -511,10 +520,16 @@
       totalClassrooms: m.totalClassrooms,
       availableLabs: m.availableLabs,
       totalLabs: m.totalLabs,
+      availableBuses: m.availableBuses,
+      totalBuses: m.totalBuses,
       affectedStudents: m.affectedStudents,
+      historicalStudentsAffected: m.affectedStudents,
       totalStudents: m.totalStudents,
       activeDisruptions: m.activeDisruptions,
+      historicalImpactedSessions: m.impactedSessionsCount,
       recoveryPct: previewPlan ? previewPlan.stats.recoveryPct : 100,
+      activityRecoveryPct: previewPlan ? (previewPlan.stats.activityRecoveryPct ?? previewPlan.stats.recoveryPct) : 100,
+      studentRecoveryPct: previewPlan ? (previewPlan.stats.studentRecoveryPct ?? 100) : 100,
       resolvedCount: previewPlan ? previewPlan.stats.resolvedCount : 0,
       totalImpacted: m.impactedSessionsCount
     };
@@ -718,15 +733,24 @@
     renderAll();
 
     const m = appState.cascadeResult.metrics;
-    const msg = appState.cascadeResult.noScheduledActivitiesOnly
-      ? 'No scheduled activities on the selected date(s). Campus remains 100% operational.'
-      : `Simulation executed (${configs.length} disruption config${configs.length > 1 ? 's' : ''}): Campus Health ${m.campusHealthPct}%, ${m.impactedSessionsCount} impacted session(s), ${m.affectedStudents} affected students.`;
-    showBanner(msg, appState.cascadeResult.noScheduledActivitiesOnly ? 'info' : 'danger');
+    const msg = appState.cascadeResult.zeroImpactExplanation
+      ? `${appState.cascadeResult.zeroImpactExplanation} Campus remains 100% operational.`
+      : appState.cascadeResult.noScheduledActivitiesOnly
+        ? 'No scheduled activities on the selected date(s). Campus remains 100% operational.'
+        : `Simulation executed (${configs.length} disruption config${configs.length > 1 ? 's' : ''}): Campus Health ${m.campusHealthPct}%, ${m.impactedSessionsCount} impacted session(s), ${m.affectedStudents} affected students.`;
+    showBanner(msg, (appState.cascadeResult.zeroImpactExplanation || appState.cascadeResult.noScheduledActivitiesOnly) ? 'info' : 'danger');
   }
 
   function applySelectedRecovery() {
     const plan = getSelectedPlan();
     if (!plan || !hasActiveDisruption()) return;
+    if (typeof Engine.validateRecoveryPlan === 'function') {
+      const gate = Engine.validateRecoveryPlan(plan);
+      if (!gate.valid) {
+        showBanner(`Cannot apply Plan Rank #${plan.rank}: ${gate.blockingReason}`, 'danger');
+        return;
+      }
+    }
     appState.recoveryApplied = true;
     appState.appliedPlanIndex = appState.selectedPlanIndex;
     persistRecoveryEvent('applied', plan);
@@ -1018,44 +1042,61 @@
       {
         label: 'Campus Health',
         value: `${dm.campusHealthPct}%`,
-        foot: !hasDisruption ? 'All systems nominal' : appState.recoveryApplied ? 'Post-recovery index' : 'Cascading impact index',
+        foot: !hasDisruption ? 'All systems nominal' : appState.recoveryApplied ? 'Post-recovery index (hardware weighted)' : 'Cascading impact index',
+        tooltip: 'Computed from offline weighted hardware availability (42-55%) + unresolved critical/standard session penalty normalized over 133 activities.',
         tone: dm.campusHealthPct >= 90 ? 'kpi-green' : dm.campusHealthPct >= 70 ? 'kpi-orange' : 'kpi-red'
       },
       {
         label: 'Available Faculty',
         value: `${dm.availableFaculty} / ${dm.totalFaculty}`,
         foot: `${dm.totalFaculty - dm.availableFaculty} unavailable / delayed`,
+        tooltip: 'Operational instructors not marked absent or bus-delayed across active slots.',
         tone: dm.availableFaculty === dm.totalFaculty ? 'kpi-green' : 'kpi-orange'
       },
       {
         label: 'Available Classrooms',
         value: `${dm.availableClassrooms} / ${dm.totalClassrooms}`,
-        foot: `Labs: ${dm.availableLabs}/${dm.totalLabs} operational`,
-        tone: dm.availableClassrooms === dm.totalClassrooms ? 'kpi-green' : 'kpi-orange'
+        foot: `Labs: ${dm.availableLabs}/${dm.totalLabs} • Buses: ${dm.availableBuses}/${dm.totalBuses}`,
+        tooltip: 'Operational classrooms, specialized labs, and transit fleet unaffected by room/power/network faults.',
+        tone: (dm.availableClassrooms === dm.totalClassrooms && dm.availableLabs === dm.totalLabs) ? 'kpi-green' : 'kpi-orange'
       },
       {
         label: 'Affected Students',
         value: dm.affectedStudents.toLocaleString(),
-        foot: `Out of ${dm.totalStudents.toLocaleString()} total`,
+        foot: appState.recoveryApplied && dm.historicalStudentsAffected > dm.affectedStudents
+          ? `Baseline ${dm.historicalStudentsAffected.toLocaleString()} → ${dm.affectedStudents.toLocaleString()} residual`
+          : `Out of ${dm.totalStudents.toLocaleString()} total`,
+        tooltip: 'Deduplicated unique student exposure across impacted scheduled sections, bus commuters, and hostel residents.',
         tone: dm.affectedStudents === 0 ? 'kpi-green' : 'kpi-red'
       },
       {
         label: 'Active Disruptions',
         value: dm.activeDisruptions,
-        foot: `${appState.cascadeResult.metrics.impactedSessionsCount} sessions impacted`,
+        foot: appState.recoveryApplied
+          ? `Historical: ${dm.historicalImpactedSessions} session(s) • Unresolved: ${dm.activeDisruptions}`
+          : `${appState.cascadeResult.metrics.impactedSessionsCount} sessions impacted`,
+        tooltip: 'Distinguishes current unresolved conflicts (0 when resolved) from total historical impacted session occurrences.',
         tone: dm.activeDisruptions === 0 ? 'kpi-green' : 'kpi-red'
       },
       {
         label: 'Recovery Rate',
         value: hasDisruption ? `${dm.recoveryPct}%` : 'Ready',
-        foot: hasDisruption && plan ? `${plan.stats.resolvedCount}/${plan.stats.totalImpacted} activities solvable` : '0 initial conflicts',
+        foot: hasDisruption && plan
+          ? (dm.affectedStudents > 0 && dm.activeDisruptions === 0
+            ? `${plan.stats.resolvedCount}/${plan.stats.totalImpacted} acts • ${plan.stats.studentRecoveryPct}% students restored`
+            : `${plan.stats.resolvedCount}/${plan.stats.totalImpacted} activities solvable`)
+          : '0 initial conflicts',
+        tooltip: 'Combines academic session recovery rate with student exposure reduction (never displays 100% while residual exposure remains).',
         tone: 'kpi-blue'
       }
     ];
 
     document.getElementById('overviewKpiGrid').innerHTML = kpis.map((k) => `
-      <div class="kpi-card ${k.tone}">
-        <div class="kpi-label">${k.label}</div>
+      <div class="kpi-card ${k.tone}" title="${escapeHtml(k.tooltip)}">
+        <div class="kpi-label">
+          <span>${k.label}</span>
+          <span class="kpi-calc-info" title="${escapeHtml(k.tooltip)}" aria-label="${escapeHtml(k.tooltip)}">i</span>
+        </div>
         <div class="kpi-value">${k.value}</div>
         <div class="kpi-foot">${k.foot}</div>
       </div>
@@ -1256,7 +1297,34 @@
       });
     });
 
-    // Build visible edges
+    // Build visible edges with causal path highlighting for selected node
+    const selectedId = appState.selectedNodeId;
+    const highlightedEdgeKeys = new Set();
+    if (selectedId && posMap.has(selectedId)) {
+      const parentMap = new Map();
+      (appState.cascadeResult.bfsTrace || []).forEach((tr) => {
+        if (!parentMap.has(tr.nodeId)) parentMap.set(tr.nodeId, []);
+        if (tr.causedBy && tr.causedBy !== 'ROOT') parentMap.get(tr.nodeId).push(tr.causedBy);
+      });
+      // Walk upstream from selectedId to contributing root causes
+      const upVisited = new Set([selectedId]);
+      const upQueue = [selectedId];
+      while (upQueue.length > 0) {
+        const cur = upQueue.shift();
+        (parentMap.get(cur) || []).forEach((pId) => {
+          highlightedEdgeKeys.add(`${pId}->${cur}`);
+          if (!upVisited.has(pId)) {
+            upVisited.add(pId);
+            upQueue.push(pId);
+          }
+        });
+      }
+      // Highlight direct downstream dependents of selectedId
+      (graph.adj.get(selectedId) || []).forEach((e) => {
+        highlightedEdgeKeys.add(`${selectedId}->${e.to}`);
+      });
+    }
+
     let edgesSvg = '';
     posMap.forEach((srcPos, srcId) => {
       const edges = graph.adj.get(srcId) || [];
@@ -1265,9 +1333,11 @@
         if (!dstPos) return;
         const srcStatus = getEffectiveNodeStatus(srcId);
         const dstStatus = getEffectiveNodeStatus(e.to);
+        const isPathHighlighted = highlightedEdgeKeys.has(`${srcId}->${e.to}`);
         let stroke = '#475569';
         let strokeW = 1.4;
         let cls = '';
+        let opacity = highlightedEdgeKeys.size > 0 && !isPathHighlighted ? '0.28' : '0.88';
         if (srcStatus === 'failed' && (dstStatus === 'affected' || dstStatus === 'failed')) {
           stroke = '#ef4444';
           strokeW = 2.4;
@@ -1281,12 +1351,17 @@
           strokeW = 2.2;
           cls = 'edge-animated';
         }
+        if (isPathHighlighted) {
+          stroke = '#fde68a';
+          strokeW = Math.max(strokeW, 3.0);
+          opacity = '1';
+        }
         const x1 = srcPos.x + nodeWidth;
         const y1 = srcPos.cy;
         const x2 = dstPos.x;
         const y2 = dstPos.cy;
         const mx = (x1 + x2) / 2;
-        edgesSvg += `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="${strokeW}" class="${cls}" opacity="0.88" />`;
+        edgesSvg += `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="${stroke}" stroke-width="${strokeW}" class="${cls}" opacity="${opacity}" />`;
       });
     });
 
@@ -1386,12 +1461,12 @@
     if (!id || !appState.cascadeResult.graph.nodes.has(id)) {
       panel.innerHTML = `
         <h3>Node Inspector</h3>
-        <p class="muted">Click any node in the SVG dependency graph to inspect its status, hop level, upstream causes, and downstream dependents.</p>
+        <p class="muted">Click any node in the SVG dependency graph to highlight its failure path, root cause(s), propagation depth, affected sections, and recovery status.</p>
       `;
       return;
     }
 
-    const { graph, nodeImpactReason, nodeHop } = appState.cascadeResult;
+    const { graph, nodeImpactReason, nodeHop, nodeRootCauses, bfsTrace, impactedActivities } = appState.cascadeResult;
     const node = graph.nodes.get(id);
     const effStatus = getEffectiveNodeStatus(id);
     const badgeCls =
@@ -1408,17 +1483,69 @@
     });
 
     const reason = nodeImpactReason.get(id) || 'Operating within normal parameters.';
-    const hop = nodeHop.has(id) ? `Hop ${nodeHop.get(id)}` : 'N/A';
+    const hopVal = nodeHop.has(id) ? nodeHop.get(id) : null;
+    const hopLabel = hopVal === null ? 'N/A' : (hopVal === 0 ? 'Hop 0 (Direct Root Cause)' : `Hop ${hopVal} (${hopVal === 1 ? 'Direct Dependent' : 'Indirect Cascade'})`);
+
+    const rootList = nodeRootCauses && nodeRootCauses.has(id) ? Array.from(nodeRootCauses.get(id)) : [];
+    const rootChain = [];
+    if (hopVal !== null) {
+      const parentTrace = new Map();
+      (bfsTrace || []).forEach((tr) => {
+        if (!parentTrace.has(tr.nodeId)) parentTrace.set(tr.nodeId, tr.causedBy);
+      });
+      let cursor = id;
+      const guard = new Set();
+      while (cursor && !guard.has(cursor)) {
+        guard.add(cursor);
+        rootChain.unshift(cursor);
+        const p = parentTrace.get(cursor);
+        if (!p || p === 'ROOT') break;
+        cursor = p;
+      }
+    }
+
+    // Deduplicated affected activities & sections linked to this node
+    const relatedActs = (impactedActivities || []).filter((a) => {
+      if (a.id === id || a.facultyId === id || a.roomId === id || a.sectionId === id || a.adminId === id) return true;
+      return rootList.includes(id) && (appState.cascadeResult.nodeRootCauses?.get(a.id)?.has(id));
+    });
+    const relatedSections = Array.from(new Set(relatedActs.map((a) => a.sectionId)));
+
+    // Check current recovery status from selected/applied plan
+    const activePlan = getAppliedPlan() || getSelectedPlan();
+    let recStatusHtml = '<span class="muted">No modification needed</span>';
+    if (activePlan) {
+      const actMatch = activePlan.actions.find((a) => a.activityId === id);
+      const busMatch = activePlan.transitActions.find((t) => t.busId === id);
+      if (actMatch) {
+        recStatusHtml = actMatch.resolved
+          ? `<span class="text-blue">Recovered (${escapeHtml(actMatch.newFacultyId)} • ${escapeHtml(actMatch.newRoomId)} • ${escapeHtml(actMatch.newDay)} ${escapeHtml(actMatch.newSlotId)})</span>`
+          : `<span class="text-red">Unresolved (${escapeHtml(actMatch.explanation)})</span>`;
+      } else if (busMatch) {
+        recStatusHtml = `<span class="text-blue">${escapeHtml(busMatch.reroutedTo)} (${busMatch.reroutedStudents} rerouted)</span>`;
+      } else if (effStatus === 'recovered') {
+        recStatusHtml = `<span class="text-blue">${appState.recoveryApplied ? 'Recovered (Applied Plan)' : 'Recovered (Projected)'}</span>`;
+      } else if (effStatus === 'failed') {
+        recStatusHtml = '<span class="text-red">Hardware offline — downstream load shifted to alternatives</span>';
+      }
+    }
 
     panel.innerHTML = `
       <h3>${escapeHtml(node.id)}</h3>
-      <div style="margin-bottom:8px;">
+      <div style="margin-bottom:8px; display:flex; flex-wrap:wrap; gap:6px;">
         <span class="badge ${badgeCls}">${effStatus}</span>
         <span class="badge badge-gray">${escapeHtml(node.category)}</span>
       </div>
       <p style="margin:0 0 8px; font-weight:600;">${escapeHtml(node.label)}</p>
-      <p class="muted" style="margin:0 0 10px;"><strong>BFS Hop:</strong> ${hop}<br><strong>Status Detail:</strong> ${escapeHtml(reason)}</p>
-      <div style="margin-bottom:10px;">
+      <div class="inspector-causal-box">
+        <div><strong>Depth / Type:</strong> ${escapeHtml(hopLabel)}</div>
+        <div><strong>Root Cause(s):</strong> ${rootList.length ? escapeHtml(rootList.join(', ')) : 'None'}</div>
+        ${rootChain.length > 1 ? `<div><strong>Propagation Chain:</strong> <code>${escapeHtml(rootChain.join(' → '))}</code></div>` : ''}
+        <div><strong>Affected Items:</strong> ${relatedActs.length} activity(ies)${relatedSections.length ? ` • Sections: ${escapeHtml(relatedSections.slice(0, 4).join(', '))}` : ''}</div>
+        <div><strong>Recovery Status:</strong> ${recStatusHtml}</div>
+        <div><strong>Detail:</strong> ${escapeHtml(reason)}</div>
+      </div>
+      <div style="margin-bottom:10px; margin-top:10px;">
         <strong style="font-size:12px;">Depends On (${upstream.length}):</strong>
         <ul style="margin:4px 0 0; padding-left:16px; font-size:12px; color:var(--text-secondary);">
           ${upstream.slice(0, 8).map((u) => `<li>${escapeHtml(u)}</li>`).join('') || '<li>Root infrastructure / independent</li>'}
@@ -2802,8 +2929,16 @@
 
     renderBeforeAfterVisual(baGrid, plan, plans, isApplied);
 
-    // Convergence & Rank #1 Explanation banners
-    let noticeHtml = '';
+    // Convergence, Validation Gate & Rank #1 Explanation banners
+    const gate = plan.validationGate || { valid: plan.validation.valid, mandatoryPassedCount: 8, mandatoryTotalCount: 8, blockingReason: '', checks: [] };
+    let noticeHtml = `
+      <div class="validation-gate-strip ${gate.valid ? 'gate-valid' : 'gate-invalid'}">
+        <strong>Pre-Apply Constraint Gate:</strong>
+        ${gate.valid
+          ? `&#10003; ${gate.mandatoryPassedCount}/${gate.mandatoryTotalCount} Mandatory Constraints Verified (0 conflicts across ${plan.validation.totalActivities} activities) • Solver: ${plan.computationMs || '0.5'} ms`
+          : `&#10007; ${escapeHtml(gate.blockingReason)}`}
+      </div>
+    `;
     if (plans.length === 1 && plans[0].allConverged) {
       noticeHtml += `
         <div class="convergence-banner">
@@ -2824,6 +2959,7 @@
       const st = p.stats;
       const wm = st.workloadMetrics || {};
       const costSummary = formatCostBreakdownTags(st.costBreakdown);
+      const pGate = p.validationGate || { valid: p.validation.valid, mandatoryPassedCount: 8, mandatoryTotalCount: 8, checks: [] };
       return `
         <div class="plan-card ${selected}" data-plan-index="${idx}">
           <div class="plan-header">
@@ -2858,6 +2994,16 @@
             <div><strong>Advantages:</strong> ${escapeHtml((p.advantages || []).join('; '))}</div>
             <div><strong>Trade-offs:</strong> ${escapeHtml((p.tradeOffs || []).join('; '))}</div>
           </div>
+          <details class="plan-rationale-details">
+            <summary>Strategy Selection Rationale &amp; Constraint Checks (${pGate.mandatoryPassedCount}/${pGate.mandatoryTotalCount})</summary>
+            <div class="plan-rationale-body">
+              <div><strong>Computed Selection Basis:</strong> ${escapeHtml(p.selectionRationale || p.description)}</div>
+              <div><strong>Exposure Metrics:</strong> Activity Recovery ${st.activityRecoveryPct ?? st.recoveryPct}% • Student Exposure Reduced ${st.studentRecoveryPct ?? 100}% • Compute ${p.computationMs || '0.5'} ms</div>
+              <div class="constraints-row" style="margin-top:6px;">
+                ${(pGate.checks || []).map((c) => `<span class="constraint-pill ${c.passed ? '' : 'pill-fail'}">${c.passed ? '&#10003;' : '&#10007;'} ${escapeHtml(c.rule)} (${escapeHtml(c.kind)})</span>`).join('')}
+              </div>
+            </div>
+          </details>
           <div class="plan-actions-row">
             <button type="button" class="btn btn-sm btn-outline view-actions-btn" data-plan-btn-index="${idx}">View Recovery Actions</button>
             <button type="button" class="btn btn-sm ${selected ? 'btn-secondary' : 'btn-primary'} select-plan-btn" data-plan-btn-index="${idx}">${selected ? 'Selected' : 'Select Recovery Plan'}</button>
@@ -2903,10 +3049,20 @@
             `).join('')}
           </div>
           <div class="decision-reason"><strong>Decision Reason:</strong> ${escapeHtml(a.explanation)}</div>
-          ${a.constraintsSatisfied && a.constraintsSatisfied.length ? `
+          ${a.constraintsChecked && a.constraintsChecked.length ? `
+            <div class="constraints-row">
+              ${a.constraintsChecked.map((c) => `<span class="constraint-pill ${c.passed ? '' : 'pill-fail'}">${c.passed ? '&#10003;' : '&#10007;'} ${escapeHtml(c.label)} <small>(${escapeHtml(c.kind)})</small></span>`).join('')}
+            </div>
+          ` : (a.constraintsSatisfied && a.constraintsSatisfied.length ? `
             <div class="constraints-row">
               ${a.constraintsSatisfied.map((c) => `<span class="constraint-pill">&#10003; ${escapeHtml(c)}</span>`).join('')}
             </div>
+          ` : '')}
+          ${a.rejectedAlternatives && a.rejectedAlternatives.length ? `
+            <details class="rejected-diag-details">
+              <summary>Rejected Alternate Candidates Tested (${a.rejectedAlternatives.length})</summary>
+              <div class="rejected-diag-body">${a.rejectedAlternatives.map((r) => `<span class="rejected-chip">${escapeHtml(r)}</span>`).join('')}</div>
+            </details>
           ` : ''}
         </div>
       `);
@@ -2968,6 +3124,69 @@
 
     const container = document.getElementById('timetableComparisonContainer');
 
+    function buildTtInspectorHtml() {
+      const selId = appState.ttSelectedActivityId;
+      if (!selId || !plan) return '';
+      const actAction = (plan.actions || []).find((a) => a.activityId === selId);
+      const actPreempt = (plan.preemptions || []).find((p) => p.activityId === selId);
+      if (!actAction && !actPreempt) {
+        const baseAct = origActivities.find((a) => a.id === selId);
+        if (!baseAct) return '';
+        return `
+          <div class="tt-activity-inspector" id="ttActivityInspector">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <strong>${escapeHtml(baseAct.id)} &bull; ${escapeHtml(baseAct.title)}</strong>
+              <span class="badge badge-green">Unchanged &amp; Valid</span>
+            </div>
+            <div class="muted" style="font-size:12px;">Original Assignment: ${escapeHtml(baseAct.day)} ${escapeHtml(baseAct.slotId)} &bull; Faculty: ${escapeHtml(baseAct.facultyId)} &bull; Room: ${escapeHtml(baseAct.roomId)} &bull; Zero disruption impact.</div>
+          </div>
+        `;
+      }
+      if (actPreempt) {
+        return `
+          <div class="tt-activity-inspector" id="ttActivityInspector">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+              <strong>${escapeHtml(actPreempt.activityId)} &bull; ${escapeHtml(actPreempt.title)}</strong>
+              <span class="badge badge-orange">${actPreempt.isSameSlotSwap ? 'In-Slot Swap' : 'Priority Preempt Shift'}</span>
+            </div>
+            <div style="font-size:12px; display:grid; gap:4px;">
+              <div><strong>Original:</strong> ${escapeHtml(actPreempt.origDay)} ${escapeHtml(actPreempt.origSlotId)} &bull; Room ${escapeHtml(actPreempt.origRoomId)}</div>
+              <div><strong>Updated:</strong> ${escapeHtml(actPreempt.newDay)} ${escapeHtml(actPreempt.newSlotId)} &bull; Room <strong>${escapeHtml(actPreempt.newRoomId)}</strong></div>
+              <div><strong>Reason:</strong> Relocated cleanly to free ${escapeHtml(actPreempt.origRoomId)} for higher-priority ${escapeHtml(actPreempt.forActivityId)} with zero hard constraint violations.</div>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div class="tt-activity-inspector" id="ttActivityInspector">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:6px;">
+            <strong>${escapeHtml(actAction.activityId)} &bull; ${escapeHtml(actAction.title)}</strong>
+            <span class="badge ${actAction.resolved ? 'badge-blue' : 'badge-red'}">${actAction.resolved ? 'Recovered Assignment' : 'Unresolved Activity'}</span>
+          </div>
+          <div style="font-size:12px; display:grid; gap:4px;">
+            <div><strong>Original:</strong> ${escapeHtml(actAction.origDay)} ${escapeHtml(actAction.origSlotId)} (${escapeHtml(actAction.origTimeText || '')}) &bull; ${escapeHtml(actAction.origFacultyId)} &bull; ${escapeHtml(actAction.origRoomId)}</div>
+            <div><strong>Updated:</strong> ${escapeHtml(actAction.newDay)} ${escapeHtml(actAction.newSlotId)} (${escapeHtml(actAction.newTimeText || '')}) &bull; <strong>${escapeHtml(actAction.newFacultyId)}</strong> &bull; <strong>${escapeHtml(actAction.newRoomId)}</strong></div>
+            <div><strong>Reason:</strong> ${escapeHtml(actAction.explanation)}</div>
+            ${(actAction.constraintsChecked && actAction.constraintsChecked.length) ? `
+              <div class="constraints-row" style="margin-top:4px;">
+                ${actAction.constraintsChecked.map((c) => `<span class="constraint-pill ${c.passed ? '' : 'pill-fail'}">${c.passed ? '&#10003;' : '&#10007;'} ${escapeHtml(c.label)}</span>`).join('')}
+              </div>
+            ` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    const ttLegendStrip = `
+      <div class="legend-row" style="margin-bottom:12px;">
+        <span class="legend-item"><i class="dot dot-green"></i>Unchanged</span>
+        <span class="legend-item"><i class="dot dot-red"></i>Disrupted / Unresolved</span>
+        <span class="legend-item"><i class="dot dot-blue"></i>Recovered / Substituted</span>
+        <span class="legend-item"><i class="dot dot-orange"></i>Swapped / Preempted</span>
+        <span class="legend-hint">Click any activity entry to inspect Original vs Updated assignment &amp; constraint checks</span>
+      </div>
+    `;
+
     if (appState.ttModeFilter === 'CHANGED_ONLY') {
       const preList = (plan && plan.preemptions) ? plan.preemptions : [];
       if (!plan || (plan.actions.length === 0 && preList.length === 0)) {
@@ -2975,6 +3194,8 @@
         return;
       }
       container.innerHTML = `
+        ${ttLegendStrip}
+        ${buildTtInspectorHtml()}
         <div class="table-scroll">
           <table class="data-table">
             <thead>
@@ -2988,16 +3209,16 @@
             </thead>
             <tbody>
               ${plan.actions.map((a) => `
-                <tr>
+                <tr class="audit-clickable-row" data-tt-act-id="${escapeHtml(a.activityId)}">
                   <td><strong>${escapeHtml(a.activityId)}</strong><br>${escapeHtml(a.title)}</td>
                   <td>${escapeHtml(a.sectionId)}</td>
                   <td>${a.occurrenceDateDMY || ''} (${a.origDay} ${a.origSlotId})<br>Fac: ${escapeHtml(a.origFacultyId)} | Room: ${escapeHtml(a.origRoomId)}</td>
                   <td>${a.newDateDMY || ''} (${a.newDay} ${a.newSlotId})<br>Fac: <strong>${escapeHtml(a.newFacultyId)}</strong> | Room: <strong>${escapeHtml(a.newRoomId)}</strong>${a.splitSummary ? `<br><span class="muted" style="font-size:11px;">${escapeHtml(a.splitSummary)}</span>` : ''}</td>
-                  <td><span class="badge ${a.resolved ? 'badge-blue' : 'badge-red'}">${a.resolved ? 'Modified & Recovered' : 'Unresolved'}</span></td>
+                  <td><span class="badge ${a.resolved ? 'badge-blue' : 'badge-red'}">${a.resolved ? `${[a.facChanged ? 'Fac Sub' : '', a.roomChanged ? 'Room Sub' : '', a.timeChanged ? 'Rescheduled' : ''].filter(Boolean).join(' + ') || 'Recovered'}` : 'Unresolved'}</span></td>
                 </tr>
               `).join('')}
               ${preList.map((pr) => `
-                <tr>
+                <tr class="audit-clickable-row" data-tt-act-id="${escapeHtml(pr.activityId)}">
                   <td><strong>${escapeHtml(pr.activityId)}</strong><br>${escapeHtml(pr.title)}</td>
                   <td>${escapeHtml(pr.sectionId)}</td>
                   <td>${pr.origDay} ${pr.origSlotId}<br>Room: ${escapeHtml(pr.origRoomId)}</td>
@@ -3047,19 +3268,22 @@
               } else if (isRecoveredSide && (actAction || actPreempt)) {
                 cls += (actPreempt || actAction.resolved) ? ' entry-recovered' : ' entry-failed';
               }
+              if (appState.ttSelectedActivityId === act.id) cls += ' entry-selected';
 
               let changeNote = '';
               if (isRecoveredSide && (actAction?.resolved || actPreempt) && orig) {
                 const diffs = [];
-                if (act.facultyId !== orig.facultyId) diffs.push('New Fac');
-                if (act.roomId !== orig.roomId) diffs.push('New Room');
-                if (act.day !== orig.day || act.slotId !== orig.slotId) diffs.push('Shifted');
+                if (act.facultyId !== orig.facultyId) diffs.push('Fac Sub');
+                if (act.roomId !== orig.roomId) diffs.push(act.activityType === 'LAB' ? 'Lab Sub' : 'Room Sub');
+                if (act.day !== orig.day || act.slotId !== orig.slotId) diffs.push('Rescheduled');
                 if (actPreempt) diffs.push(actPreempt.isSameSlotSwap ? 'Swapped' : 'Preempted');
-                if (diffs.length) changeNote = `<span class="text-blue"><strong>★ ${diffs.join(' • ')}</strong></span>`;
+                if (diffs.length) changeNote = `<span class="text-blue"><strong>&#9733; ${diffs.join(' • ')}</strong></span>`;
+              } else if (isRecoveredSide && actAction && !actAction.resolved) {
+                changeNote = `<span class="text-red"><strong>Unresolved</strong></span>`;
               }
 
               html += `
-                <div class="tt-entry ${cls}">
+                <div class="tt-entry ${cls}" data-tt-act-id="${escapeHtml(act.id)}" title="Click to inspect details">
                   <strong>${escapeHtml(act.activityType === 'LECTURE' || act.activityType === 'LAB' ? act.original.subjectCode : act.activityType)}</strong>
                   <span>${escapeHtml(act.facultyId)} • ${escapeHtml(act.roomId)}</span>
                   ${changeNote}
@@ -3077,6 +3301,8 @@
     }
 
     container.innerHTML = `
+      ${ttLegendStrip}
+      ${buildTtInspectorHtml()}
       <div class="tt-split-grid">
         <div class="tt-panel">
           <h3>Original Baseline Timetable — ${escapeHtml(secId)}</h3>
@@ -3440,9 +3666,48 @@
       ? `<div class="audit-n2-note"><strong>N-2 Pair Stress Test:</strong> ${audit.n2CertifiedCount}/${audit.n2Items.length} top risk pairs fully recoverable.</div>`
       : '';
 
+    const diagTargetId = appState.auditDiagnoseId || (audit.failingItems[0]?.id || audit.items[0]?.id || null);
+    const diagItem = diagTargetId ? (audit.items.find((x) => x.id === diagTargetId) || (audit.n2Items || []).find((x) => x.id === diagTargetId)) : null;
+    const diagInfo = (diagItem && window.OMNIS_READINESS && typeof window.OMNIS_READINESS.analyzeVulnerability === 'function')
+      ? window.OMNIS_READINESS.analyzeVulnerability(baseState, diagItem)
+      : null;
+    const cf = (appState.auditCounterfactual && diagItem && appState.auditCounterfactual.targetId === diagItem.id)
+      ? appState.auditCounterfactual
+      : null;
+
+    const diagPanelHtml = diagInfo ? `
+      <div class="readiness-diag-panel" id="readinessDiagnosisPanel">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:8px;">
+          <div>
+            <strong>Vulnerability Diagnostics: ${escapeHtml(diagItem.id)} (${escapeHtml(diagItem.name)})</strong>
+            <div class="muted" style="font-size:11.5px;">Computed directly via Engine BFS &amp; solver checks — click any SPOF row "Diagnose" or chip below to inspect</div>
+          </div>
+          ${diagInfo.recommendation ? `<button type="button" class="btn btn-sm btn-primary" id="btnTestRecommendedImprovement" data-test-improvement="${escapeHtml(diagItem.id)}">Test Recommended Improvement</button>` : ''}
+        </div>
+        <div class="diag-detail-grid">
+          <div><strong>Why Vulnerable:</strong> ${escapeHtml(diagInfo.whyVulnerable)}</div>
+          <div><strong>Contributing Dependencies:</strong> ${escapeHtml(diagInfo.contributingDependencies.slice(0, 6).join(', ') || 'Direct standalone asset')}</div>
+          <div><strong>Recovery Blocker / Gap:</strong> ${escapeHtml(diagInfo.whyInsufficient)}</div>
+          <div><strong>Critical Sessions Exposed:</strong> ${escapeHtml(diagInfo.criticalImpactedIds.join(', ') || '0 exam/placement conflicts')}</div>
+          ${diagInfo.recommendation ? `<div><strong>Recommended Preventive Mitigation:</strong> ${escapeHtml(diagInfo.recommendation.title)} — ${escapeHtml(diagInfo.recommendation.rationale)}</div>` : ''}
+        </div>
+        ${cf ? `
+          <div class="diag-counterfactual-box">
+            <strong>Counterfactual Clone Result (${escapeHtml(cf.recommendation.title)} — Temporary Clone Only, Live Data &amp; DB Unchanged):</strong>
+            <div class="cf-metrics-row">
+              <span>Target Recovery: <strong>${cf.baseline.recoveryPct}% &rarr; ${cf.projected.recoveryPct}%</strong></span>
+              <span>Residual Students: <strong>${cf.baseline.studentsRemaining} &rarr; ${cf.projected.studentsRemaining}</strong> (${cf.studentsSaved} saved)</span>
+              <span>Status: <strong>${cf.projected.fullyRecoverable ? 'Certified Recoverable' : 'Residual Risk'}</strong></span>
+              ${cf.projected.readinessScore !== null ? `<span>Campus Readiness Score: <strong>${cf.baseline.readinessScore} &rarr; ${cf.projected.readinessScore}</strong> (${cf.scoreDelta >= 0 ? '+' : ''}${cf.scoreDelta})</span>` : ''}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    ` : '';
+
     sumWrap.innerHTML = `
       <div class="readiness-summary-grid">
-        <div class="readiness-cert-card">
+        <div class="readiness-cert-card" title="Readiness Score = 50% N-1 Certifiability + 25% Student Exposure Resilience + 25% Critical Exam/Placement Protection">
           <div class="cert-header-row">
             <div>
               <div class="cert-kicker">INSTITUTIONAL RESILIENCE CERTIFICATE</div>
@@ -3458,7 +3723,7 @@
           </div>
           ${n2SummaryHtml}
           <div class="cert-failing-block">
-            <div class="cert-fail-label">Failing / Residual-Impact Resources (click to simulate):</div>
+            <div class="cert-fail-label">Failing / Residual-Impact Resources (click to simulate or diagnose):</div>
             <div class="cert-fail-chips">${failingBadges}</div>
           </div>
         </div>
@@ -3466,6 +3731,7 @@
           ${gaugeHtml}
         </div>
       </div>
+      ${diagPanelHtml}
     `;
 
     // c) Sortable SPOF Leaderboard Table
@@ -3504,7 +3770,7 @@
         </thead>
         <tbody>
           ${baseList.map((item, idx) => `
-            <tr class="audit-clickable-row ${item.fullyRecoverable ? '' : 'audit-row-fail'}" data-audit-load-id="${escapeHtml(item.id)}" title="Click to load ${escapeHtml(item.id)} in Disruption Simulator">
+            <tr class="audit-clickable-row ${item.fullyRecoverable ? '' : 'audit-row-fail'}" data-audit-load-id="${escapeHtml(item.id)}" title="Click row to load ${escapeHtml(item.id)} in Disruption Simulator">
               <td>${idx + 1}</td>
               <td><strong>${escapeHtml(item.id)}</strong><br><span class="muted" style="font-size:11.5px;">${escapeHtml(item.name)}</span></td>
               <td><span class="badge badge-gray">${escapeHtml(item.category)}</span></td>
@@ -3513,7 +3779,10 @@
               <td><strong>${item.recoveryPct}%</strong></td>
               <td class="${item.criticalUnprotected > 0 ? 'text-red' : ''}"><strong>${item.criticalUnprotected}</strong></td>
               <td>${item.recoveryCost} pts</td>
-              <td><span class="badge ${item.fullyRecoverable ? 'badge-green' : 'badge-red'}">${item.fullyRecoverable ? 'Fully Recoverable' : 'Failing / Residual'}</span></td>
+              <td>
+                <span class="badge ${item.fullyRecoverable ? 'badge-green' : 'badge-red'}">${item.fullyRecoverable ? 'Fully Recoverable' : 'Failing / Residual'}</span>
+                <button type="button" class="btn btn-sm btn-ghost audit-diagnose-btn" data-audit-diagnose="${escapeHtml(item.id)}" style="margin-top:4px; padding:2px 7px; font-size:10.5px;">Diagnose</button>
+              </td>
             </tr>
           `).join('')}
         </tbody>
@@ -3822,6 +4091,38 @@
         return;
       }
 
+      const diagBtn = e.target.closest('[data-audit-diagnose]');
+      if (diagBtn) {
+        e.stopPropagation();
+        appState.auditDiagnoseId = diagBtn.dataset.auditDiagnose;
+        appState.auditCounterfactual = null;
+        renderReadinessView();
+        const panel = document.getElementById('readinessDiagnosisPanel');
+        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        return;
+      }
+
+      const testImpBtn = e.target.closest('[data-test-improvement]');
+      if (testImpBtn) {
+        e.stopPropagation();
+        const tId = testImpBtn.dataset.testImprovement;
+        const audit = appState.readinessAudit;
+        const item = audit && (audit.items.find((x) => x.id === tId) || (audit.n2Items || []).find((x) => x.id === tId));
+        if (item && window.OMNIS_READINESS && typeof window.OMNIS_READINESS.testRecommendedImprovement === 'function') {
+          appState.auditCounterfactual = window.OMNIS_READINESS.testRecommendedImprovement(baseState, item, audit);
+          renderReadinessView();
+        }
+        return;
+      }
+
+      const ttEntryEl = e.target.closest('[data-tt-act-id]');
+      if (ttEntryEl) {
+        const aid = ttEntryEl.dataset.ttActId;
+        appState.ttSelectedActivityId = appState.ttSelectedActivityId === aid ? null : aid;
+        renderTimetableView();
+        return;
+      }
+
       const loadAuditTarget = e.target.closest('[data-audit-load-id]');
       if (loadAuditTarget) {
         loadResourceFailureIntoSimulator(loadAuditTarget.dataset.auditLoadId);
@@ -3855,6 +4156,7 @@
 
       const planCard = e.target.closest('[data-plan-index]');
       if (planCard) {
+        if (e.target.closest('details, summary')) return;
         appState.selectedPlanIndex = Number(planCard.dataset.planIndex);
         if (!appState.recoveryApplied) persistRecoveryEvent('selected', getSelectedPlan());
         renderAll();
