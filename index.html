@@ -192,6 +192,10 @@
             <span>Campus Health:</span>
             <strong id="topbarHealthValue">100%</strong>
           </div>
+          <button type="button" class="sync-pill status-offline" id="dbSyncPill" title="Checking Supabase sync status...">
+            <span class="sync-dot"></span>
+            <span id="dbSyncLabel">Offline</span>
+          </button>
           <button class="btn btn-primary" id="btnApplyRecovery" disabled>Apply Recovery Plan</button>
           <button class="btn btn-secondary" id="btnUndoRecovery" disabled>Undo Recovery</button>
           <button class="btn btn-ghost" id="btnResetSimulation">Reset Simulation</button>
@@ -400,6 +404,19 @@
               </div>
             </div>
           </div>
+
+          <div class="card" id="recentRunsCard">
+            <div class="card-header wrap-header">
+              <div>
+                <h2>Recent Simulation Runs</h2>
+                <p class="card-sub">Saved crisis runs synced with Supabase &amp; local outbox — reload any previous run to recompute recovery options</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline" id="btnRefreshRecentRuns">Refresh Runs</button>
+            </div>
+            <div id="recentRunsList" class="recent-runs-list">
+              <p class="muted">No simulation runs recorded yet.</p>
+            </div>
+          </div>
         </section>
 
         <!-- VIEW 4: RECOVERY CENTER -->
@@ -444,6 +461,19 @@
               </div>
             </div>
             <div id="recoveryExplanationsList" class="decision-list"></div>
+          </div>
+
+          <div class="card" id="recoveryNoticesSection">
+            <div class="card-header wrap-header">
+              <div>
+                <h2>Stakeholder Notifications</h2>
+                <p class="card-sub">Generate audience-ready notices for students, faculty, transport desk &amp; hostel wardens and persist to database</p>
+              </div>
+              <button type="button" class="btn btn-sm btn-primary" id="btnGenerateNotices">Generate Notices</button>
+            </div>
+            <div id="recoveryNoticesWrap" class="notices-grid">
+              <p class="muted">Run a disruption simulation and click &ldquo;Generate Notices&rdquo; to create and save stakeholder advisories.</p>
+            </div>
           </div>
         </section>
 
@@ -500,7 +530,10 @@
                 <h2>Institutional Digital Twin Registry</h2>
                 <p class="card-sub">Complete inbuilt dataset: 5 departments, 50 faculty, 20 sections (1,200 students), 25 classrooms, 10 labs, 8 buses, hostels, exams, placements &amp; events</p>
               </div>
-              <input type="text" id="dataSearchInput" class="text-input" placeholder="Search current table...">
+              <div class="action-group" style="align-items:center;">
+                <input type="text" id="dataSearchInput" class="text-input" placeholder="Search current table...">
+                <button type="button" class="btn btn-sm btn-outline" id="btnExportUserData">Export my data (JSON)</button>
+              </div>
             </div>
 
             <div class="data-tabs" id="dataTabsBar">
@@ -594,9 +627,12 @@
     </div>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
   <script src="data.js"></script>
   <script src="engine.js"></script>
   <script src="readiness.js"></script>
+  <script src="db.js"></script>
   <script src="app.js"></script>
   <script src="login.js"></script>
 </body>

@@ -33,6 +33,7 @@
   const appState = {
     activeView: 'overview',
     activeScenarioId: null,
+    activeRunId: null,
     activeFailureConfigs: [],
     draftCards: [],
     cardSeq: 1,
@@ -539,6 +540,47 @@
     document.getElementById('actionBanner').classList.add('hidden');
   }
 
+  // ==================== STEP 4: SUPABASE / OUTBOX PERSISTENCE HOOKS ====================
+
+  function persistQueueSync() {
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.saveQueueSnapshot === 'function') {
+      window.OMNIS_DB.saveQueueSnapshot(appState.queuedFailureConfigs);
+    }
+  }
+
+  function persistQueueSoftDelete(clientIds) {
+    if (!Array.isArray(clientIds) || clientIds.length === 0) return;
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.softDeleteQueueItems === 'function') {
+      window.OMNIS_DB.softDeleteQueueItems(clientIds);
+    }
+  }
+
+  function persistSimulationRun(scenarioId, configs, cascadeResult) {
+    if (!window.OMNIS_DB || typeof window.OMNIS_DB.recordSimulationRun !== 'function' || !cascadeResult) return;
+    const runUuid = window.OMNIS_DB.generateUUID();
+    appState.activeRunId = runUuid;
+    window.OMNIS_DB.recordSimulationRun({
+      id: runUuid,
+      client_run_id: runUuid,
+      scenario_id: scenarioId || 'CUSTOM',
+      failure_configs: configs || [],
+      metrics: cascadeResult.metrics || {},
+      impacted_count: (cascadeResult.metrics && cascadeResult.metrics.impactedSessionsCount) || 0,
+      campus_health_pct: (cascadeResult.metrics && cascadeResult.metrics.campusHealthPct) ?? 100
+    });
+  }
+
+  function persistRecoveryEvent(eventType, plan = null) {
+    if (!window.OMNIS_DB || typeof window.OMNIS_DB.recordRecoveryEvent !== 'function') return;
+    window.OMNIS_DB.recordRecoveryEvent({
+      run_id: appState.activeRunId || null,
+      event_type: eventType,
+      plan_rank: plan ? plan.rank : null,
+      plan_name: plan ? plan.name : null,
+      plan_stats: plan && plan.stats ? plan.stats : {}
+    });
+  }
+
   // ==================== ACTIONS ====================
 
   function hasActiveDisruption() {
@@ -559,21 +601,26 @@
     appState.selectedPlanIndex = 0;
     appState.editingQueueId = null;
 
+    const previousQueueIds = appState.queuedFailureConfigs.map((x) => x._qid).filter(Boolean);
     const defaults = Engine.cloneState(scenario.defaultConfigs || []);
     appState.draftCards = defaults.map(hydrateCardFromConfig).filter(Boolean);
     if (scenario.id === 'SCN-MULTI-DISRUPTION') {
+      persistQueueSoftDelete(previousQueueIds);
       appState.queuedFailureConfigs = defaults.map((cfg) => ({
         ...cfg,
         _qid: `Q-${appState.queueSeq++}`
       }));
       appState.activeFailureConfigs = Engine.cloneState(appState.queuedFailureConfigs);
+      persistQueueSync();
     } else {
       // Do not merge predefined failures with unrelated previous queue entries
+      persistQueueSoftDelete(previousQueueIds);
       appState.queuedFailureConfigs = [];
       appState.activeFailureConfigs = defaults;
     }
 
     recomputeSimulation();
+    persistSimulationRun(scenario.id, appState.activeFailureConfigs, appState.cascadeResult);
     appState.selectedNodeId = appState.cascadeResult.failedIds[0] || appState.cascadeResult.impactedActivities[0]?.id || null;
     renderAll();
 
@@ -611,6 +658,7 @@
         appState.queuedFailureConfigs[idx] = cfg;
       }
       appState.editingQueueId = null;
+      persistQueueSync();
       showBanner(`Updated queued disruption (${getScenarioLabel(cfg.scenarioType)}). Click "Run Combined Simulation" to execute.`, 'info');
       renderSimulatorView();
       return;
@@ -630,6 +678,7 @@
     });
 
     if (added > 0) {
+      persistQueueSync();
       showBanner(`Added ${added} disruption(s) to Failure Queue${skippedDup ? ` (${skippedDup} duplicate skipped)` : ''}.`, 'info');
     } else {
       showBanner('Selected disruption configuration is already in the Failure Queue (duplicate prevented).', 'info');
@@ -660,9 +709,11 @@
     appState.activeScenarioId = configs.length > 1 ? 'SCN-MULTI-DISRUPTION' : configs[0].scenarioType;
     appState.activeFailureConfigs = configs;
     appState.recoveryApplied = false;
+    appState.appliedPlanIndex = -1;
     appState.selectedPlanIndex = 0;
 
     recomputeSimulation();
+    persistSimulationRun(appState.activeScenarioId, configs, appState.cascadeResult);
     appState.selectedNodeId = appState.cascadeResult.failedIds[0] || appState.cascadeResult.impactedActivities[0]?.id || null;
     renderAll();
 
@@ -678,6 +729,7 @@
     if (!plan || !hasActiveDisruption()) return;
     appState.recoveryApplied = true;
     appState.appliedPlanIndex = appState.selectedPlanIndex;
+    persistRecoveryEvent('applied', plan);
     renderAll();
     showBanner(
       `Applied Rank #${plan.rank} "${plan.name}": ${plan.stats.resolvedCount}/${plan.stats.totalImpacted} impacted occurrences recovered (${plan.stats.recoveryPct}%), affected students reduced from ${plan.stats.affectedStudentsBefore} to ${plan.stats.affectedStudentsAfter}.`,
@@ -687,14 +739,18 @@
 
   function undoRecovery() {
     if (!appState.recoveryApplied) return;
+    const prevPlan = getAppliedPlan();
     appState.recoveryApplied = false;
     appState.appliedPlanIndex = -1;
+    persistRecoveryEvent('undone', prevPlan);
     renderAll();
     showBanner('Recovery undone. Campus reverted to disrupted pre-recovery state for further comparison.', 'info');
   }
 
   function resetSimulation() {
+    const prevQueueIds = appState.queuedFailureConfigs.map((x) => x._qid).filter(Boolean);
     appState.activeScenarioId = null;
+    appState.activeRunId = null;
     appState.activeFailureConfigs = [];
     appState.draftCards = [];
     appState.queuedFailureConfigs = [];
@@ -703,6 +759,8 @@
     appState.appliedPlanIndex = -1;
     appState.selectedPlanIndex = 0;
     appState.selectedNodeId = null;
+    persistQueueSoftDelete(prevQueueIds);
+    persistRecoveryEvent('reset', null);
     recomputeSimulation();
     hideBanner();
     renderAll();
@@ -778,6 +836,163 @@
 
     const valEl = document.getElementById('sidebarValidationStatus');
     valEl.textContent = `${initialValidation.conflicts.length} (Verified)`;
+
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.getStatus === 'function') {
+      renderSyncIndicator(window.OMNIS_DB.getStatus());
+    }
+  }
+
+  function formatSyncFriendlyReason(rawErr) {
+    const s = String(rawErr || '');
+    if (!s) return 'Ready';
+    if (s.includes('Anonymous sign-ins are disabled')) return 'Supabase project requires Anonymous Sign-Ins enabled';
+    if (s.includes('placeholder') || s.includes('not present')) return 'Local-only mode (no Supabase project configured)';
+    if (s.includes('offline')) return 'Offline — changes queued locally and will sync automatically';
+    return 'Temporary connection issue — changes safely queued locally';
+  }
+
+  function renderSyncIndicator(snap) {
+    const pill = document.getElementById('dbSyncPill');
+    const lbl = document.getElementById('dbSyncLabel');
+    if (!pill || !lbl || !snap) return;
+
+    pill.classList.remove('status-online', 'status-syncing', 'status-offline', 'status-error');
+    const st = snap.status || 'offline';
+    if (st === 'online') {
+      pill.classList.add('status-online');
+      lbl.textContent = 'Connected';
+    } else if (st === 'syncing') {
+      pill.classList.add('status-syncing');
+      lbl.textContent = 'Syncing...';
+    } else if (st === 'error') {
+      pill.classList.add('status-error');
+      lbl.textContent = 'Connection Failed';
+    } else {
+      pill.classList.add('status-offline');
+      lbl.textContent = 'Offline - will sync';
+    }
+
+    const pendingTxt = snap.pendingCount > 0 ? `Pending outbox: ${snap.pendingCount}` : 'Outbox clean (0 pending)';
+    const reasonTxt = snap.lastError ? `Status note: ${formatSyncFriendlyReason(snap.lastError)}` : 'Supabase durable sync active';
+    pill.title = `${reasonTxt} • ${pendingTxt} • Click to sync`;
+  }
+
+  let recentRunsCache = [];
+
+  async function renderRecentRunsList() {
+    const wrap = document.getElementById('recentRunsList');
+    if (!wrap || !window.OMNIS_DB || typeof window.OMNIS_DB.fetchRecentRuns !== 'function') return;
+
+    const res = await window.OMNIS_DB.fetchRecentRuns(10);
+    const runs = (res && Array.isArray(res.data)) ? res.data : [];
+    recentRunsCache = runs;
+
+    if (runs.length === 0) {
+      wrap.innerHTML = `<p class="muted">No simulation runs recorded yet. Trigger a predefined or custom disruption above.</p>`;
+      return;
+    }
+
+    wrap.innerHTML = runs.map((r) => {
+      const when = r.created_at ? new Date(r.created_at).toLocaleString() : 'Just now';
+      const health = Number(r.campus_health_pct ?? 100);
+      const badgeCls = health >= 90 ? 'badge-green' : health >= 70 ? 'badge-orange' : 'badge-red';
+      const syncTag = r.pendingSync
+        ? '<span class="badge badge-orange">Pending Sync</span>'
+        : '<span class="badge badge-green">Saved</span>';
+      return `
+        <div class="recent-run-row">
+          <div class="recent-run-meta">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <strong>${escapeHtml(getScenarioLabel(r.scenario_id))}</strong>
+              <span class="badge ${badgeCls}">${health}% Health</span>
+              <span class="badge badge-gray">${r.impacted_count || 0} impacted</span>
+              ${syncTag}
+            </div>
+            <span class="recent-run-sub">${escapeHtml(when)} • ${(r.failure_configs || []).length} failure config(s)</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-outline load-recent-run-btn" data-load-run-id="${escapeHtml(r.client_run_id || r.id)}">Load this run</button>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function loadRecentRunById(runKey) {
+    const run = recentRunsCache.find((r) => String(r.client_run_id || r.id) === String(runKey));
+    if (!run || !Array.isArray(run.failure_configs) || run.failure_configs.length === 0) {
+      showBanner('Unable to reload that simulation run because no failure configuration was attached.', 'info');
+      return;
+    }
+    appState.activeScenarioId = run.scenario_id || 'CUSTOM';
+    appState.activeRunId = run.id || run.client_run_id || null;
+    appState.activeFailureConfigs = Engine.cloneState(run.failure_configs);
+    appState.draftCards = appState.activeFailureConfigs.map(hydrateCardFromConfig).filter(Boolean);
+    appState.recoveryApplied = false;
+    appState.appliedPlanIndex = -1;
+    appState.selectedPlanIndex = 0;
+
+    recomputeSimulation();
+    renderAll();
+    showBanner(`Loaded saved run "${getScenarioLabel(run.scenario_id)}" (${run.campus_health_pct}% health, ${run.impacted_count} impacted session(s)).`, 'info');
+  }
+
+  function buildAndPersistNotices() {
+    const wrap = document.getElementById('recoveryNoticesWrap');
+    if (!wrap) return;
+    if (!hasActiveDisruption()) {
+      showBanner('Run a disruption simulation first before generating stakeholder notices.', 'info');
+      return;
+    }
+    const plan = getSelectedPlan();
+    const m = appState.cascadeResult.metrics;
+    const actions = plan ? plan.actions : [];
+    const affectedSections = Array.from(new Set(actions.map((a) => a.sectionId).filter(Boolean)));
+    const affectedFaculty = Array.from(new Set(actions.flatMap((a) => [a.origFacultyId, a.newFacultyId]).filter(Boolean)));
+    const impactedBuses = (appState.cascadeResult.failedIds || []).filter((id) => id.startsWith('BUS-'));
+    const impactedHostels = (appState.cascadeResult.bfsTrace || []).filter((h) => String(h.nodeId).startsWith('HST-')).map((h) => h.nodeId);
+
+    const statusTag = appState.recoveryApplied ? 'APPLIED PLAN' : 'PROPOSED PLAN';
+    const planLabel = plan ? `${plan.name} (Rank #${plan.rank})` : 'Emergency Contingency';
+
+    const notices = [
+      {
+        audience: 'Students & Sections',
+        message: `[${statusTag}: ${planLabel}] Advisory for ${affectedSections.join(', ') || 'affected batches'}: ${actions.length} session(s) updated. Please check the Recovery Center / Timetable portal for relocated rooms and timings (${m.affectedStudents} students covered).`
+      },
+      {
+        audience: 'Faculty & Coordinators',
+        message: `[${statusTag}: ${planLabel}] Faculty substitution & room schedule notice for ${affectedFaculty.join(', ') || 'departmental faculty'}: ${actions.filter((a) => a.facChanged).length} substitution(s) and ${actions.filter((a) => a.roomChanged || a.timeChanged).length} room/time adjustment(s) active.`
+      },
+      {
+        audience: 'Transport Desk',
+        message: impactedBuses.length > 0
+          ? `Urgent Fleet Advisory (${impactedBuses.join(', ')}): Morning shuttle rerouting active for linked commuting faculty and sections until fleet restoration.`
+          : `Transport Status Nominal: No primary buses directly offline; maintain standard shuttle schedule for shifted afternoon sessions.`
+      },
+      {
+        audience: 'Hostel Wardens',
+        message: impactedHostels.length > 0
+          ? `Utility & Student Safety Alert (${impactedHostels.join(', ')}): Coordinate backup power & study-hall lighting for affected hostel blocks.`
+          : `Hostel Advisory: Resident sections impacted by academic schedule shifts (${affectedSections.slice(0, 4).join(', ') || 'see timetable'}); keep mess and shuttle timings aligned.`
+      }
+    ];
+
+    wrap.innerHTML = notices.map((n, idx) => `
+      <div class="notice-card">
+        <div class="notice-head">
+          <strong>${escapeHtml(n.audience)}</strong>
+          <button type="button" class="btn btn-sm btn-outline copy-notice-btn" data-notice-idx="${idx}">Copy</button>
+        </div>
+        <div class="notice-body">${escapeHtml(n.message)}</div>
+      </div>
+    `).join('');
+
+    wrap.dataset.noticesJson = JSON.stringify(notices);
+
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.recordNotifications === 'function') {
+      window.OMNIS_DB.recordNotifications(notices, appState.activeRunId).then((res) => {
+        if (res && res.ok) showBanner('Generated 4 stakeholder notices and queued them for database persistence.', 'success');
+      });
+    }
   }
 
   // ==================== VIEW 1: OVERVIEW ====================
@@ -2100,6 +2315,7 @@
         Campus Health: <strong>${cm.campusHealthPct}%</strong> • Affected Students: <strong>${cm.affectedStudents}</strong> • Impacted Sessions: <strong>${cm.impactedSessionsCount}</strong>
       </div>
     `;
+    renderRecentRunsList();
   }
 
   // ==================== VIEW 4: RECOVERY CENTER ====================
@@ -3083,11 +3299,13 @@
 
     if (!cfg) return;
 
+    const previousQueueIds = appState.queuedFailureConfigs.map((x) => x._qid).filter(Boolean);
     appState.recoveryApplied = false;
     appState.appliedPlanIndex = -1;
     appState.selectedPlanIndex = 0;
     appState.queuedFailureConfigs = [];
     appState.editingQueueId = null;
+    persistQueueSoftDelete(previousQueueIds);
 
     if (cfg.scenarioType === 'GENERIC_NODE') {
       appState.activeScenarioId = 'GENERIC_NODE';
@@ -3101,6 +3319,7 @@
     }
 
     recomputeSimulation();
+    persistSimulationRun(appState.activeScenarioId, appState.activeFailureConfigs, appState.cascadeResult);
     appState.selectedNodeId = resId;
     switchView('simulator');
     renderAll();
@@ -3137,6 +3356,9 @@
       appState.readinessAudit = summary;
       appState.readinessRunning = false;
       appState.readinessProgress = null;
+      if (window.OMNIS_DB && typeof window.OMNIS_DB.recordReadinessAudit === 'function') {
+        window.OMNIS_DB.recordReadinessAudit(summary, includeN2);
+      }
       renderReadinessView();
       showBanner(
         `Readiness Audit completed: Score ${summary.readinessScore}/100 • Certified for ${summary.certifiedCount} of ${summary.totalCount} single failures (${summary.certifiedPct}%).`,
@@ -3473,6 +3695,7 @@
       const planCard = e.target.closest('[data-plan-index]');
       if (planCard) {
         appState.selectedPlanIndex = Number(planCard.dataset.planIndex);
+        if (!appState.recoveryApplied) persistRecoveryEvent('selected', getSelectedPlan());
         renderAll();
         return;
       }
@@ -3495,6 +3718,8 @@
         const qid = remBtn.dataset.removeQid;
         appState.queuedFailureConfigs = appState.queuedFailureConfigs.filter((x) => x._qid !== qid);
         if (appState.editingQueueId === qid) appState.editingQueueId = null;
+        persistQueueSoftDelete([qid]);
+        persistQueueSync();
         renderSimulatorView();
         return;
       }
@@ -3876,8 +4101,10 @@
     document.getElementById('btnSimulateCustom').addEventListener('click', () => triggerCustomFailures(false));
     document.getElementById('btnRunCombinedQueue').addEventListener('click', () => triggerCustomFailures(true));
     document.getElementById('btnClearQueue').addEventListener('click', () => {
+      const removedIds = appState.queuedFailureConfigs.map((x) => x._qid).filter(Boolean);
       appState.queuedFailureConfigs = [];
       appState.editingQueueId = null;
+      persistQueueSoftDelete(removedIds);
       renderSimulatorView();
     });
     document.getElementById('btnClearCustom').addEventListener('click', () => {
@@ -3940,13 +4167,147 @@
         renderReadinessView();
       });
     }
+
+    // Step 5-7 Controls: Sync indicator, Recent Runs, Stakeholder Notices, JSON Data Export
+    const syncPill = document.getElementById('dbSyncPill');
+    if (syncPill) {
+      syncPill.addEventListener('click', async () => {
+        if (!window.OMNIS_DB) return;
+        const st = window.OMNIS_DB.getStatus();
+        if (!st.isOnline) {
+          const r = await window.OMNIS_DB.touchSession();
+          showBanner(r.ok ? 'Reconnected to Supabase and synced pending changes.' : `Sync status: ${formatSyncFriendlyReason(r.error || st.lastError)}`, r.ok ? 'success' : 'info');
+        } else {
+          const r = await window.OMNIS_DB.flushOutbox();
+          showBanner(r.ok ? 'All local changes are saved and synchronized with Supabase.' : `Sync note: ${formatSyncFriendlyReason(r.error)}`, r.ok ? 'success' : 'info');
+        }
+        renderSyncIndicator(window.OMNIS_DB.getStatus());
+      });
+    }
+
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.onStatusChange === 'function') {
+      window.OMNIS_DB.onStatusChange(renderSyncIndicator);
+    }
+
+    const btnRefreshRuns = document.getElementById('btnRefreshRecentRuns');
+    if (btnRefreshRuns) btnRefreshRuns.addEventListener('click', renderRecentRunsList);
+
+    const recentWrap = document.getElementById('recentRunsList');
+    if (recentWrap) {
+      recentWrap.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-load-run-id]');
+        if (btn) loadRecentRunById(btn.dataset.loadRunId);
+      });
+    }
+
+    const btnGenNotices = document.getElementById('btnGenerateNotices');
+    if (btnGenNotices) btnGenNotices.addEventListener('click', buildAndPersistNotices);
+
+    const noticesWrap = document.getElementById('recoveryNoticesWrap');
+    if (noticesWrap) {
+      noticesWrap.addEventListener('click', (e) => {
+        const copyBtn = e.target.closest('.copy-notice-btn');
+        if (!copyBtn) return;
+        try {
+          const arr = JSON.parse(noticesWrap.dataset.noticesJson || '[]');
+          const notice = arr[Number(copyBtn.dataset.noticeIdx)];
+          if (notice && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(notice.message);
+          }
+          copyBtn.textContent = 'Copied';
+          setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1200);
+        } catch (_) {}
+      });
+    }
+
+    const btnExportData = document.getElementById('btnExportUserData');
+    if (btnExportData) {
+      btnExportData.addEventListener('click', async () => {
+        if (!window.OMNIS_DB || typeof window.OMNIS_DB.exportUserData !== 'function') return;
+        const res = await window.OMNIS_DB.exportUserData();
+        if (!res.ok || !res.data) {
+          showBanner('Could not prepare backup export. Please retry.', 'info');
+          return;
+        }
+        const blob = new Blob([JSON.stringify(res.data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `omnisx-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showBanner('Exported institutional simulation & recovery data backup (JSON).', 'success');
+      });
+    }
   }
 
-  // Boot (hydrate cached Readiness Audit if available in localStorage)
-  if (window.OMNIS_READINESS) {
-    appState.readinessAudit = window.OMNIS_READINESS.loadAuditResult();
+  // Step 4: Restore queue & last simulation cleanly BEFORE first renderAll(), with safe offline/timeout fallback
+  function applyRestoredState(restored) {
+    if (!restored || !restored.data) return;
+    const { queuedFailureConfigs, lastRun, lastRecoveryEvent } = restored.data;
+
+    if (Array.isArray(queuedFailureConfigs) && queuedFailureConfigs.length > 0) {
+      appState.queuedFailureConfigs = queuedFailureConfigs.map((cfg) => ({ ...cfg }));
+      let maxSeq = appState.queueSeq;
+      appState.queuedFailureConfigs.forEach((cfg) => {
+        const m = /^Q-(\d+)$/.exec(String(cfg._qid || ''));
+        if (m) maxSeq = Math.max(maxSeq, Number(m[1]) + 1);
+      });
+      appState.queueSeq = maxSeq;
+    }
+
+    if (lastRun && Array.isArray(lastRun.failure_configs) && lastRun.failure_configs.length > 0) {
+      appState.activeScenarioId = lastRun.scenario_id || null;
+      appState.activeRunId = lastRun.id || lastRun.client_run_id || null;
+      appState.activeFailureConfigs = Engine.cloneState(lastRun.failure_configs);
+      appState.draftCards = appState.activeFailureConfigs.map(hydrateCardFromConfig).filter(Boolean);
+    }
+
+    recomputeSimulation();
+
+    if (lastRecoveryEvent && lastRecoveryEvent.event_type === 'applied' && appState.recoveryPlans.length > 0) {
+      const targetRank = Number(lastRecoveryEvent.plan_rank) || 1;
+      const idx = appState.recoveryPlans.findIndex((p) => p.rank === targetRank);
+      const matchedIdx = idx >= 0 ? idx : 0;
+      appState.selectedPlanIndex = matchedIdx;
+      appState.appliedPlanIndex = matchedIdx;
+      appState.recoveryApplied = true;
+    } else if (lastRecoveryEvent && lastRecoveryEvent.event_type === 'selected' && appState.recoveryPlans.length > 0) {
+      const targetRank = Number(lastRecoveryEvent.plan_rank) || 1;
+      const idx = appState.recoveryPlans.findIndex((p) => p.rank === targetRank);
+      if (idx >= 0) appState.selectedPlanIndex = idx;
+    }
   }
-  recomputeSimulation();
-  bindEvents();
-  renderAll();
+
+  async function bootstrapApp() {
+    if (window.OMNIS_READINESS) {
+      appState.readinessAudit = window.OMNIS_READINESS.loadAuditResult();
+    }
+    bindEvents();
+
+    const healthVal = document.getElementById('topbarHealthValue');
+    if (healthVal) healthVal.textContent = 'Restoring...';
+
+    try {
+      if (window.OMNIS_DB && typeof window.OMNIS_DB.restoreSessionState === 'function') {
+        const timeoutFallback = new Promise((resolve) => setTimeout(() => resolve(null), 2500));
+        const restored = await Promise.race([window.OMNIS_DB.restoreSessionState(), timeoutFallback]);
+        if (restored && restored.ok) {
+          applyRestoredState(restored);
+        } else {
+          recomputeSimulation();
+        }
+      } else {
+        recomputeSimulation();
+      }
+    } catch (_) {
+      recomputeSimulation();
+    }
+
+    renderAll();
+  }
+
+  bootstrapApp();
 })();

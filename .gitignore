@@ -1,0 +1,7 @@
+# Supabase local credentials (never commit live project URL/anon keys)
+config.js
+
+# OS & editor junk
+.DS_Store
+Thumbs.db
+*.log

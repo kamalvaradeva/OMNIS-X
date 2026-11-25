@@ -2871,3 +2871,94 @@ input[type="range"] {
     padding: 14px 16px 32px;
   }
 }
+
+/* Step 5-7: Sync Status Pill, Recent Runs & Stakeholder Notices */
+.sync-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border-radius: 9999px;
+  background: var(--omnis-card);
+  border: 1px solid var(--omnis-border);
+  color: var(--omnis-text-2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.sync-pill:hover {
+  border-color: var(--omnis-yellow-border);
+  background: var(--omnis-surface-2);
+}
+.sync-pill .sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--omnis-muted);
+  flex-shrink: 0;
+}
+.sync-pill.status-online .sync-dot { background: var(--omnis-green); }
+.sync-pill.status-online { border-color: rgba(34, 197, 94, 0.35); color: #86efac; }
+.sync-pill.status-syncing .sync-dot { background: var(--omnis-amber); animation: pulseSoft 1.2s infinite; }
+.sync-pill.status-syncing { border-color: rgba(245, 158, 11, 0.4); color: #fde68a; }
+.sync-pill.status-offline .sync-dot { background: var(--omnis-muted); }
+.sync-pill.status-offline { color: var(--omnis-muted); }
+.sync-pill.status-error .sync-dot { background: var(--omnis-red); }
+.sync-pill.status-error { border-color: rgba(239, 68, 68, 0.45); color: #fca5a5; }
+
+.recent-runs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.recent-run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 13px;
+  background: var(--omnis-surface-2);
+  border: 1px solid var(--omnis-border);
+}
+.recent-run-row:hover {
+  border-color: var(--omnis-yellow-border);
+}
+.recent-run-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.recent-run-sub {
+  font-size: 12px;
+  color: var(--omnis-muted);
+}
+
+.notices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+.notice-card {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--omnis-surface-2);
+  border: 1px solid var(--omnis-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notice-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.notice-body {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--omnis-text-2);
+  white-space: pre-line;
+}
