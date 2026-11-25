@@ -857,25 +857,33 @@
     const lbl = document.getElementById('dbSyncLabel');
     if (!pill || !lbl || !snap) return;
 
-    pill.classList.remove('status-online', 'status-syncing', 'status-offline', 'status-error');
+    pill.classList.remove('status-online', 'status-connecting', 'status-syncing', 'status-sync-failed', 'status-offline', 'status-error');
     const st = snap.status || 'offline';
     if (st === 'online') {
       pill.classList.add('status-online');
       lbl.textContent = 'Connected';
+    } else if (st === 'connecting') {
+      pill.classList.add('status-connecting');
+      lbl.textContent = 'Connecting';
     } else if (st === 'syncing') {
       pill.classList.add('status-syncing');
-      lbl.textContent = 'Syncing...';
-    } else if (st === 'error') {
+      lbl.textContent = 'Syncing';
+    } else if (st === 'sync_failed') {
+      pill.classList.add('status-sync-failed');
+      lbl.textContent = 'Sync Failed';
+    } else if (st === 'connection_failed' || st === 'error') {
       pill.classList.add('status-error');
       lbl.textContent = 'Connection Failed';
     } else {
       pill.classList.add('status-offline');
-      lbl.textContent = 'Offline - will sync';
+      lbl.textContent = 'Offline';
     }
 
     const pendingTxt = snap.pendingCount > 0 ? `Pending outbox: ${snap.pendingCount}` : 'Outbox clean (0 pending)';
-    const reasonTxt = snap.lastError ? `Status note: ${formatSyncFriendlyReason(snap.lastError)}` : 'Supabase durable sync active';
-    pill.title = `${reasonTxt} • ${pendingTxt} • Click to sync`;
+    const deadTxt = snap.deadLetterCount > 0 ? ` • Dead-letter: ${snap.deadLetterCount}` : '';
+    const errMsg = snap.lastSyncError || snap.lastConnectionError;
+    const reasonTxt = errMsg ? `Status note: ${formatSyncFriendlyReason(errMsg)}` : 'Supabase durable sync verified';
+    pill.title = `${reasonTxt} • ${pendingTxt}${deadTxt} • Click to sync`;
   }
 
   let recentRunsCache = [];
@@ -4174,15 +4182,16 @@
     if (syncPill) {
       syncPill.addEventListener('click', async () => {
         if (!window.OMNIS_DB) return;
-        const st = window.OMNIS_DB.getStatus();
-        if (!st.isOnline) {
-          const r = await window.OMNIS_DB.touchSession();
-          showBanner(r.ok ? 'Reconnected to Supabase and synced pending changes.' : `Sync status: ${formatSyncFriendlyReason(r.error || st.lastError)}`, r.ok ? 'success' : 'info');
+        const r = await window.OMNIS_DB.touchSession();
+        const after = window.OMNIS_DB.getStatus();
+        renderSyncIndicator(after);
+        if (!r.ok) {
+          showBanner(`Connection note: ${formatSyncFriendlyReason(r.error || after.lastConnectionError)}`, 'info');
+        } else if (after.status === 'sync_failed') {
+          showBanner(`Connected to Supabase, but ${after.deadLetterCount || 'some'} record(s) failed sync (${formatSyncFriendlyReason(after.lastSyncError)}).`, 'info');
         } else {
-          const r = await window.OMNIS_DB.flushOutbox();
-          showBanner(r.ok ? 'All local changes are saved and synchronized with Supabase.' : `Sync note: ${formatSyncFriendlyReason(r.error)}`, r.ok ? 'success' : 'info');
+          showBanner('Connected and all institutional simulation records are synchronized with Supabase.', 'success');
         }
-        renderSyncIndicator(window.OMNIS_DB.getStatus());
       });
     }
 
