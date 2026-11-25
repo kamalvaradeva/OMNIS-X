@@ -394,13 +394,13 @@
       .map(cardToEngineConfig);
   }
 
-  // Colors matching prompt requirements:
-  // green = operational, red = failed, orange = indirectly affected, blue = recovered
+  // Operational status colors matching deep navy & slate theme:
+  // green = operational (#22C55E), red = critical (#EF4444), amber = warning/affected (#F59E0B), cyan = recovered (#38BDF8)
   const STATUS_COLORS = {
-    operational: { fill: '#dcfce7', stroke: '#16a34a', text: '#14532d' },
-    failed:      { fill: '#fee2e2', stroke: '#dc2626', text: '#7f1d1d' },
-    affected:    { fill: '#ffedd5', stroke: '#ea580c', text: '#7c2d12' },
-    recovered:   { fill: '#dbeafe', stroke: '#2563eb', text: '#1e3a8a' }
+    operational: { fill: 'rgba(34, 197, 94, 0.16)', stroke: '#22c55e', text: '#86efac' },
+    failed:      { fill: 'rgba(239, 68, 68, 0.20)', stroke: '#ef4444', text: '#fecaca' },
+    affected:    { fill: 'rgba(245, 158, 11, 0.18)', stroke: '#f59e0b', text: '#fdba74' },
+    recovered:   { fill: 'rgba(56, 189, 248, 0.18)', stroke: '#38bdf8', text: '#bae6fd' }
   };
 
   const VIEW_META = {
@@ -1037,19 +1037,19 @@
         if (!dstPos) return;
         const srcStatus = getEffectiveNodeStatus(srcId);
         const dstStatus = getEffectiveNodeStatus(e.to);
-        let stroke = '#cbd5e1';
+        let stroke = '#475569';
         let strokeW = 1.4;
         let cls = '';
         if (srcStatus === 'failed' && (dstStatus === 'affected' || dstStatus === 'failed')) {
-          stroke = '#dc2626';
+          stroke = '#ef4444';
           strokeW = 2.4;
           cls = 'edge-animated';
         } else if (srcStatus === 'affected' && dstStatus === 'affected') {
-          stroke = '#ea580c';
+          stroke = '#f59e0b';
           strokeW = 2.0;
           cls = 'edge-animated';
         } else if (dstStatus === 'recovered' || srcStatus === 'recovered') {
-          stroke = '#2563eb';
+          stroke = '#38bdf8';
           strokeW = 2.2;
           cls = 'edge-animated';
         }
@@ -1062,7 +1062,7 @@
       });
     });
 
-    // Draw recovery substitution links in blue when recovery is applied
+    // Draw recovery substitution links in recovered cyan when recovery is applied
     if (appState.recoveryApplied && plan) {
       plan.actions.forEach((act) => {
         if (!act.resolved) return;
@@ -1076,7 +1076,7 @@
             const x2 = actPos.x;
             const y2 = actPos.cy;
             const mx = (x1 + x2) / 2;
-            edgesSvg += `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="#2563eb" stroke-width="2.4" class="edge-animated" />`;
+            edgesSvg += `<path d="M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}" fill="none" stroke="#38bdf8" stroke-width="2.4" class="edge-animated" />`;
           }
         });
       });
@@ -1086,7 +1086,7 @@
     let headersSvg = '';
     tiers.forEach((tier, colIdx) => {
       const x = padX + colIdx * (nodeWidth + colGap);
-      headersSvg += `<text x="${x}" y="22" font-size="11" font-weight="700" fill="#475569">${escapeHtml(tier.title)}</text>`;
+      headersSvg += `<text x="${x}" y="22" font-size="11" font-weight="700" fill="#94a3b8">${escapeHtml(tier.title)}</text>`;
     });
 
     // Nodes SVG
@@ -1102,7 +1102,7 @@
         <g class="graph-node" data-node-id="${escapeHtml(node.id)}" transform="translate(${x}, ${y})">
           <rect width="${nodeWidth}" height="${nodeHeight}" rx="8"
             fill="${colors.fill}"
-            stroke="${isSelected ? '#0f172a' : colors.stroke}"
+            stroke="${isSelected ? '#fde68a' : colors.stroke}"
             stroke-width="${isSelected ? 3 : 1.7}" />
           <text x="8" y="16" font-size="11" font-weight="700" fill="${colors.text}">${escapeHtml(node.id)}</text>
           <text x="8" y="${nodeHeight - 9}" font-size="10" fill="${colors.text}">${escapeHtml(trunc)}</text>
@@ -2208,8 +2208,8 @@
     let gridSvg = '';
     [0, 25, 50, 75, 100].forEach((pct) => {
       const y = padT + plotH * (1 - pct / 100);
-      gridSvg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#e2e8f0" stroke-dasharray="${pct === 0 ? '' : '3 3'}" />`;
-      gridSvg += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#64748b">${pct}%</text>`;
+      gridSvg += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#334155" stroke-dasharray="${pct === 0 ? '' : '3 3'}" />`;
+      gridSvg += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#94a3b8">${pct}%</text>`;
     });
 
     let barsSvg = '';
@@ -2224,19 +2224,19 @@
       const xAfter = cx + gap / 2;
 
       const afterColor = (g.key === 'students' || g.key === 'conflicts')
-        ? (g.afterNorm === 0 ? '#16a34a' : '#2563eb')
-        : (g.key === 'changes' ? '#f59e0b' : '#2563eb');
+        ? (g.afterNorm === 0 ? '#22c55e' : '#38bdf8')
+        : (g.key === 'changes' ? '#f59e0b' : '#38bdf8');
 
       barsSvg += `
         <g class="ba-svg-group ${isFocused ? 'focused' : ''}" data-ba-metric="${g.key}" style="cursor:pointer;">
           <rect x="${cx - colW * 0.46}" y="${padT - 6}" width="${colW * 0.92}" height="${plotH + 38}" rx="8"
-            fill="${isFocused ? '#eff6ff' : 'transparent'}" stroke="${isFocused ? '#93c5fd' : 'transparent'}" stroke-width="1.2" />
-          <rect x="${xBefore}" y="${bY}" width="${barW}" height="${bH}" rx="4" fill="#dc2626" opacity="0.86" />
-          <text x="${xBefore + barW / 2}" y="${bY - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#991b1b">${escapeHtml(g.beforeVal)}</text>
+            fill="${isFocused ? 'rgba(253, 230, 138, 0.08)' : 'transparent'}" stroke="${isFocused ? 'rgba(253, 230, 138, 0.35)' : 'transparent'}" stroke-width="1.2" />
+          <rect x="${xBefore}" y="${bY}" width="${barW}" height="${bH}" rx="4" fill="#ef4444" opacity="0.88" />
+          <text x="${xBefore + barW / 2}" y="${bY - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fca5a5">${escapeHtml(g.beforeVal)}</text>
           <rect x="${xAfter}" y="${aY}" width="${barW}" height="${aH}" rx="4" fill="${afterColor}" />
-          <text x="${xAfter + barW / 2}" y="${aY - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1e3a8a">${escapeHtml(g.afterVal)}</text>
-          <text x="${cx}" y="${H - 22}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#334155">${escapeHtml(g.label)}</text>
-          <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${g.deltaGood ? '#15803d' : '#b45309'}">${escapeHtml(g.delta)}</text>
+          <text x="${xAfter + barW / 2}" y="${aY - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#bae6fd">${escapeHtml(g.afterVal)}</text>
+          <text x="${cx}" y="${H - 22}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#cbd5e1">${escapeHtml(g.label)}</text>
+          <text x="${cx}" y="${H - 8}" text-anchor="middle" font-size="9.5" font-weight="700" fill="${g.deltaGood ? '#4ade80' : '#fbbf24'}">${escapeHtml(g.delta)}</text>
         </g>
       `;
     });
@@ -2299,8 +2299,8 @@
     [0, 0.5, 1].forEach((f) => {
       const y = padT + plotH * (1 - f);
       const val = Math.round(maxCnt * f);
-      grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#e2e8f0" stroke-dasharray="${f === 0 ? '' : '3 3'}" />`;
-      grid += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#64748b">${val}</text>`;
+      grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#334155" stroke-dasharray="${f === 0 ? '' : '3 3'}" />`;
+      grid += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#94a3b8">${val}</text>`;
     });
 
     let bars = '';
@@ -2315,12 +2315,12 @@
 
       bars += `
         <g>
-          <rect x="${cx - barW - 3}" y="${padT + plotH - impH}" width="${barW}" height="${impH}" rx="4" fill="#dc2626" opacity="0.86" />
-          <text x="${cx - barW / 2 - 3}" y="${padT + plotH - impH - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#991b1b">${imp}</text>
-          <rect x="${cx + 3}" y="${padT + plotH - recH}" width="${barW}" height="${recH}" rx="4" fill="#2563eb" />
-          <text x="${cx + barW / 2 + 3}" y="${padT + plotH - recH - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#1e3a8a">${curRec}</text>
-          <text x="${cx}" y="${H - 20}" text-anchor="middle" font-size="11" font-weight="700" fill="#334155">${d}</text>
-          <text x="${cx}" y="${H - 7}" text-anchor="middle" font-size="9" fill="#64748b">${curRem} left</text>
+          <rect x="${cx - barW - 3}" y="${padT + plotH - impH}" width="${barW}" height="${impH}" rx="4" fill="#ef4444" opacity="0.88" />
+          <text x="${cx - barW / 2 - 3}" y="${padT + plotH - impH - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#fca5a5">${imp}</text>
+          <rect x="${cx + 3}" y="${padT + plotH - recH}" width="${barW}" height="${recH}" rx="4" fill="#38bdf8" />
+          <text x="${cx + barW / 2 + 3}" y="${padT + plotH - recH - 4}" text-anchor="middle" font-size="9.5" font-weight="700" fill="#bae6fd">${curRec}</text>
+          <text x="${cx}" y="${H - 20}" text-anchor="middle" font-size="11" font-weight="700" fill="#cbd5e1">${d}</text>
+          <text x="${cx}" y="${H - 7}" text-anchor="middle" font-size="9" fill="#94a3b8">${curRem} left</text>
         </g>
       `;
     });
@@ -2356,19 +2356,19 @@
       { label: 'Cost Efficiency', get: (p) => Math.max(15, Math.round(100 - (p.stats.recoveryCost / maxCost) * 65)) }
     ];
 
-    const colors = ['#2563eb', '#0d9488', '#7c3aed'];
+    const colors = ['#fde68a', '#38bdf8', '#a78bfa'];
     let grid = '';
     [25, 50, 75, 100].forEach((val) => {
       const y = padT + plotH * (1 - val / 100);
-      grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#e2e8f0" stroke-dasharray="3 3" />`;
-      grid += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#64748b">${val}</text>`;
+      grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#334155" stroke-dasharray="3 3" />`;
+      grid += `<text x="${padL - 6}" y="${y + 3}" text-anchor="end" font-size="9.5" fill="#94a3b8">${val}</text>`;
     });
 
     let axisLabels = '';
     axes.forEach((ax, i) => {
       const x = padL + (plotW / (axes.length - 1)) * i;
-      grid += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="#f1f5f9" />`;
-      axisLabels += `<text x="${x}" y="${H - 12}" text-anchor="middle" font-size="9.8" font-weight="700" fill="#334155">${ax.label}</text>`;
+      grid += `<line x1="${x}" y1="${padT}" x2="${x}" y2="${padT + plotH}" stroke="rgba(51, 65, 85, 0.55)" />`;
+      axisLabels += `<text x="${x}" y="${H - 12}" text-anchor="middle" font-size="9.8" font-weight="700" fill="#cbd5e1">${ax.label}</text>`;
     });
 
     let lines = '';
@@ -2383,7 +2383,7 @@
       const dots = axes.map((ax, i) => {
         const x = padL + (plotW / (axes.length - 1)) * i;
         const y = padT + plotH * (1 - Math.max(0, Math.min(100, ax.get(p))) / 100);
-        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isSel ? 5 : 3.5}" fill="${col}" stroke="#ffffff" stroke-width="1.5" />`;
+        return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${isSel ? 5 : 3.5}" fill="${col}" stroke="#080f1d" stroke-width="1.5" />`;
       }).join('');
 
       lines += `
@@ -2417,12 +2417,12 @@
     return `
       <div class="ba-gauge-card">
         <svg viewBox="0 0 116 116" class="ba-gauge-svg" role="img" aria-label="${escapeHtml(title)}">
-          <circle cx="58" cy="58" r="${rOuter}" fill="none" stroke="#e2e8f0" stroke-width="8" />
-          <circle cx="58" cy="58" r="${rInner}" fill="none" stroke="#fee2e2" stroke-width="4" />
-          <circle cx="58" cy="58" r="${rInner}" fill="none" stroke="#dc2626" stroke-width="4" stroke-dasharray="${dashInner.toFixed(1)} ${cInner.toFixed(1)}" transform="rotate(-90 58 58)" opacity="0.85" />
-          <circle cx="58" cy="58" r="${rOuter}" fill="none" stroke="${curPct >= 90 ? '#2563eb' : '#ea580c'}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dashOuter.toFixed(1)} ${cOuter.toFixed(1)}" transform="rotate(-90 58 58)" />
-          <text x="58" y="55" text-anchor="middle" font-size="16" font-weight="800" fill="#0f172a">${curPct}%</text>
-          <text x="58" y="70" text-anchor="middle" font-size="9.5" font-weight="700" fill="#16a34a">${delta >= 0 ? '+' : ''}${delta}%</text>
+          <circle cx="58" cy="58" r="${rOuter}" fill="none" stroke="#334155" stroke-width="8" />
+          <circle cx="58" cy="58" r="${rInner}" fill="none" stroke="rgba(239, 68, 68, 0.22)" stroke-width="4" />
+          <circle cx="58" cy="58" r="${rInner}" fill="none" stroke="#ef4444" stroke-width="4" stroke-dasharray="${dashInner.toFixed(1)} ${cInner.toFixed(1)}" transform="rotate(-90 58 58)" opacity="0.88" />
+          <circle cx="58" cy="58" r="${rOuter}" fill="none" stroke="${curPct >= 90 ? '#38bdf8' : (curPct >= 60 ? '#fde68a' : '#f59e0b')}" stroke-width="8" stroke-linecap="round" stroke-dasharray="${dashOuter.toFixed(1)} ${cOuter.toFixed(1)}" transform="rotate(-90 58 58)" />
+          <text x="58" y="55" text-anchor="middle" font-size="16" font-weight="800" fill="#f8fafc">${curPct}%</text>
+          <text x="58" y="70" text-anchor="middle" font-size="9.5" font-weight="700" fill="#22c55e">${delta >= 0 ? '+' : ''}${delta}%</text>
         </svg>
         <div class="ba-gauge-title">${escapeHtml(title)}</div>
         <div class="muted" style="font-size:11px;">${escapeHtml(subLabel)}</div>
