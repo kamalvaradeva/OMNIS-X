@@ -3,11 +3,123 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OMNIS-X — Intelligent Campus Recovery System</title>
+  <title>OMNIS-X — JGIT Campus Digital Twin</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="login.css">
 </head>
 <body>
-  <div class="app-shell">
+  <!-- JGIT x OMNIS-X Animated Institutional Login Landing Page -->
+  <section id="loginLandingPage" aria-label="JGIT Institutional Portal Login">
+    <div class="login-bg-stage" aria-hidden="true">
+      <div class="login-slides-track" id="loginSlidesTrack"></div>
+    </div>
+    <div class="login-bg-overlay" aria-hidden="true"></div>
+
+    <div class="login-shell">
+      <div class="login-hero-col">
+        <header class="brand-hero-block">
+          <div class="jgit-lockup">
+            <h1 class="jgit-wordmark">JGIT</h1>
+            <span class="jgit-full-name">Jain Institute of Technology, Davangere</span>
+          </div>
+          <div class="omnis-platform-row">
+            <span class="omnis-badge">OMNIS-X</span>
+            <span class="omnis-subtitle">Intelligent Campus Digital Twin</span>
+          </div>
+          <p class="institution-tagline">&ldquo;Building a Resilient Campus. Empowering the Future.&rdquo;</p>
+        </header>
+
+        <div class="slide-copy-stage" id="slideCopyStage" aria-live="polite">
+          <span class="slide-kicker" id="slideKicker">Campus &amp; Infrastructure</span>
+          <div class="slide-headline-mask">
+            <h2 class="slide-headline" id="slideHeadline">BUILDING THE FUTURE</h2>
+          </div>
+          <p class="slide-desc" id="slideDesc">A campus environment designed for innovation, academic excellence and technological advancement.</p>
+        </div>
+
+        <footer class="login-hero-footer">
+          <div class="slideshow-controls" role="region" aria-label="Slideshow controls">
+            <span class="slide-counter" id="slideCounter">01 / 04</span>
+            <div class="slide-indicators" id="slideIndicators"></div>
+            <div class="slide-ctrl-btns">
+              <button type="button" class="ctrl-btn" id="btnSlidePrev" aria-label="Previous slide">&larr; Prev</button>
+              <button type="button" class="ctrl-btn" id="btnSlidePause" aria-pressed="false">Pause</button>
+              <button type="button" class="ctrl-btn" id="btnSlideNext" aria-label="Next slide">Next &rarr;</button>
+            </div>
+          </div>
+
+          <div class="inst-info-strip">
+            <span class="strip-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+              Engineering &amp; Technology
+            </span>
+            <span class="strip-sep">|</span>
+            <span class="strip-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg>
+              Innovation &amp; Research
+            </span>
+            <span class="strip-sep">|</span>
+            <span class="strip-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>
+              Student Development
+            </span>
+            <span class="strip-sep">|</span>
+            <span class="strip-item">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+              Training &amp; Placement
+            </span>
+          </div>
+          <div class="powered-by-line">Powered by OMNIS-X &mdash; Institutional Resilience &amp; Recovery System</div>
+        </footer>
+      </div>
+
+      <div class="login-card-col">
+        <div class="glass-login-card" role="region" aria-label="OMNIS-X Sign In">
+          <div class="card-logo-row">
+            <div class="card-logo-mark" aria-hidden="true">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+                <path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="12" cy="12" r="3" fill="currentColor"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="card-title">Welcome to OMNIS-X</h2>
+              <p class="card-sub">Institutional Resilience Command Center</p>
+            </div>
+          </div>
+
+          <form class="login-form" id="loginForm" novalidate>
+            <div class="login-field">
+              <label for="loginUsername">Institutional Username or Email</label>
+              <div class="login-input-wrap">
+                <input type="text" id="loginUsername" class="login-input" placeholder="admin@jgit.edu.in" autocomplete="username" required>
+              </div>
+            </div>
+
+            <div class="login-field">
+              <label for="loginPassword">Password</label>
+              <div class="login-input-wrap">
+                <input type="password" id="loginPassword" class="login-input has-toggle" placeholder="Enter password" autocomplete="current-password" required>
+                <button type="button" class="pw-toggle-btn" id="btnTogglePassword" aria-pressed="false" aria-label="Show password">Show</button>
+              </div>
+            </div>
+
+            <div class="login-error-msg hidden" id="loginErrorMsg" role="alert"></div>
+
+            <button type="submit" class="btn-login-submit" id="btnLoginSubmit">Sign In</button>
+          </form>
+
+          <div class="demo-creds-bar">
+            <span>Portal Access: <strong>admin@jgit.edu.in</strong> / <strong>omnisx</strong></span>
+            <button type="button" class="demo-fill-btn" id="btnFillDemoCreds">Fill Demo</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="app-shell hidden" id="appShell">
     <!-- Dark Navy Command Sidebar -->
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
@@ -76,6 +188,7 @@
         <div class="sidebar-meta-row">
           <span>Initial Conflicts</span><strong class="text-green" id="sidebarValidationStatus">0 (Verified)</strong>
         </div>
+        <button type="button" class="sidebar-signout-btn" id="btnSidebarSignOut">Sign Out to Portal</button>
       </div>
     </aside>
 
@@ -503,5 +616,6 @@
   <script src="engine.js"></script>
   <script src="readiness.js"></script>
   <script src="app.js"></script>
+  <script src="login.js"></script>
 </body>
 </html>
