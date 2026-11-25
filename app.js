@@ -4745,11 +4745,53 @@
     }
   }
 
-  async function bootstrapApp() {
+  let appEventsBound = false;
+  let dashboardActivated = false;
+
+  function deactivateDashboard() {
+    dashboardActivated = false;
+    closeLauncherDrawer();
+    appState.activeScenarioId = null;
+    appState.activeRunId = null;
+    appState.activeFailureConfigs = [];
+    appState.draftCards = [];
+    appState.queuedFailureConfigs = [];
+    appState.editingQueueId = null;
+    appState.recoveryApplied = false;
+    appState.appliedPlanIndex = -1;
+    appState.selectedPlanIndex = 0;
+    appState.selectedNodeId = null;
+    appState.ttSelectedActivityId = null;
+    appState.readinessAudit = null;
+    appState.auditDiagnoseId = null;
+    appState.auditCounterfactual = null;
+    recentRunsCache = [];
+    recomputeSimulation();
+    hideBanner();
+    switchView('overview');
+  }
+
+  async function activateDashboard() {
+    if (!appEventsBound) {
+      bindEvents();
+      appEventsBound = true;
+    }
+
+    // Strict Supabase auth session guard: never expose or hydrate dashboard without authenticated user
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.getAuthSession === 'function') {
+      const auth = await window.OMNIS_DB.getAuthSession();
+      if (!auth || !auth.authenticated) {
+        const appEl = document.getElementById('appShell');
+        const loginEl = document.getElementById('loginLandingPage');
+        if (appEl) appEl.classList.add('hidden');
+        if (loginEl) loginEl.classList.remove('hidden');
+        return false;
+      }
+    }
+
     if (window.OMNIS_READINESS) {
       appState.readinessAudit = window.OMNIS_READINESS.loadAuditResult();
     }
-    bindEvents();
 
     const healthVal = document.getElementById('topbarHealthValue');
     if (healthVal) healthVal.textContent = 'Restoring...';
@@ -4770,8 +4812,20 @@
       recomputeSimulation();
     }
 
+    dashboardActivated = true;
     renderAll();
+    return true;
   }
 
-  bootstrapApp();
+  window.OMNIS_APP = {
+    activateDashboard,
+    deactivateDashboard,
+    isActivated: () => dashboardActivated
+  };
+
+  if (!appEventsBound) {
+    bindEvents();
+    appEventsBound = true;
+  }
+  recomputeSimulation();
 })();

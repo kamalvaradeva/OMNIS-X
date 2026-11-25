@@ -23,6 +23,7 @@
   const DEAD_LETTER_KEY = 'omnis_dead_letter';
   const CACHE_STORAGE_KEY = 'omnis_state_cache_v1';
   const STATUS_EVENT_NAME = 'omnis:db-status';
+  const AUTH_SIGNOUT_EVENT_NAME = 'omnis:auth-signed-out';
 
   const MAX_JSONB_BYTES = 204800; // 200 KB hard constraint matching schema.sql
   const DEBOUNCE_QUEUE_MS = 500;
@@ -60,6 +61,7 @@
   let restConfig = null;
   let sessionId = null;
   let userId = null;
+  let userEmail = null;
 
   // Authoritative separated connection + sync states
   let connectionState = 'offline'; // 'connecting' | 'connected' | 'offline' | 'connection_failed'
@@ -284,8 +286,10 @@
       pendingCount: outbox.length,
       deadLetterCount: dead.length,
       configured,
+      authReady,
       sessionId,
       userId,
+      userEmail,
       lastError: lastSyncError || lastConnectionError,
       lastConnectionError,
       lastSyncError
@@ -333,27 +337,166 @@
     return { valid: true, url, key, appVersion: String(cfg.APP_VERSION || '1.0.0'), sessionLabel: String(cfg.SESSION_LABEL || 'JGIT Campus Session') };
   }
 
-  async function ensureAnonymousSession() {
-    if (!client) return { ok: false, error: 'Client not initialized' };
-    try {
-      const { data: sessionData, error: sessionErr } = await client.auth.getSession();
-      if (sessionErr) throw sessionErr;
-      if (sessionData && sessionData.session && sessionData.session.user) {
-        userId = sessionData.session.user.id;
-        accessToken = sessionData.session.access_token || null;
-        return { ok: true, userId };
-      }
-      const { data: anonData, error: anonErr } = await client.auth.signInAnonymously();
-      if (anonErr) throw anonErr;
-      if (anonData && anonData.user) {
-        userId = anonData.user.id;
-        accessToken = anonData.session ? anonData.session.access_token : null;
-        return { ok: true, userId };
-      }
-      return { ok: false, error: 'Anonymous sign-in returned no user' };
-    } catch (err) {
-      return { ok: false, error: err && err.message ? err.message : String(err) };
+  function ensureSupabaseClient() {
+    const check = validateConfig();
+    if (!check.valid) {
+      configured = false;
+      restConfig = null;
+      return { ok: false, check, error: check.reason };
     }
+    configured = true;
+    restConfig = { url: check.url, key: check.key };
+    try {
+      if (!client) {
+        client = global.supabase.createClient(check.url, check.key, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+        });
+        client.auth.onAuthStateChange((ev, sess) => {
+          accessToken = sess ? sess.access_token : null;
+          if (sess && sess.user && !sess.user.is_anonymous) {
+            userId = sess.user.id;
+            userEmail = sess.user.email || null;
+            authReady = true;
+          } else if (ev === 'SIGNED_OUT') {
+            authReady = false;
+            sessionConfirmed = false;
+            userId = null;
+            userEmail = null;
+            accessToken = null;
+            readyPromise = null;
+            setConnectionState('offline', 'Signed out');
+            try { global.dispatchEvent(new global.CustomEvent(AUTH_SIGNOUT_EVENT_NAME)); } catch (_) {}
+          }
+        });
+      }
+      return { ok: true, check, client };
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      configured = false;
+      return { ok: false, check, error: msg };
+    }
+  }
+
+  function isValidEmailUserSession(sess) {
+    return Boolean(sess && sess.user && !sess.user.is_anonymous && sess.user.email);
+  }
+
+  async function getAuthSession() {
+    const init = ensureSupabaseClient();
+    if (!init.ok || !client) {
+      authReady = false;
+      userId = null;
+      userEmail = null;
+      accessToken = null;
+      return { authenticated: false, configured: init.check ? init.check.valid : false, user: null, session: null, error: init.error || 'Supabase unavailable' };
+    }
+    try {
+      const { data, error } = await client.auth.getSession();
+      if (error) throw error;
+      const sess = data && data.session ? data.session : null;
+      if (!isValidEmailUserSession(sess)) {
+        // Clear any leftover legacy anonymous session so unauthenticated users must sign in cleanly
+        if (sess && sess.user && sess.user.is_anonymous) {
+          try { await client.auth.signOut(); } catch (_) {}
+        }
+        authReady = false;
+        sessionConfirmed = false;
+        userId = null;
+        userEmail = null;
+        accessToken = null;
+        return { authenticated: false, configured: true, user: null, session: null, error: null };
+      }
+      userId = sess.user.id;
+      userEmail = sess.user.email || null;
+      accessToken = sess.access_token || null;
+      authReady = true;
+      return { authenticated: true, configured: true, user: sess.user, session: sess, error: null };
+    } catch (err) {
+      return { authenticated: false, configured: true, user: null, session: null, error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  async function signInWithPassword(email, password) {
+    const cleanEmail = String(email || '').trim();
+    const rawPw = String(password || '');
+    if (!cleanEmail || !rawPw) {
+      return { ok: false, error: 'Email and password are required.' };
+    }
+    const init = ensureSupabaseClient();
+    if (!init.ok || !client) {
+      setConnectionState('connection_failed', init.error || 'Supabase unavailable');
+      return { ok: false, error: init.error || 'Supabase client is not configured.' };
+    }
+    if (typeof global.navigator !== 'undefined' && global.navigator.onLine === false) {
+      return { ok: false, error: 'You appear to be offline. Connect to the internet to authenticate.' };
+    }
+    setConnectionState('connecting', null);
+    try {
+      const { data, error } = await client.auth.signInWithPassword({ email: cleanEmail, password: rawPw });
+      if (error) {
+        setConnectionState('offline', error.message);
+        return { ok: false, error: error.message || 'Invalid credentials', code: error.code || null };
+      }
+      if (!data || !data.session || !data.user) {
+        setConnectionState('offline', 'Authentication returned no session');
+        return { ok: false, error: 'Authentication failed: no active session returned.' };
+      }
+      userId = data.user.id;
+      userEmail = data.user.email || cleanEmail;
+      accessToken = data.session.access_token || null;
+      authReady = true;
+      readyPromise = null;
+      await ready();
+      return { ok: true, user: data.user, session: data.session, error: null };
+    } catch (err) {
+      const msg = err && err.message ? err.message : String(err);
+      setConnectionState('connection_failed', msg);
+      return { ok: false, error: msg };
+    }
+  }
+
+  async function signOutUser() {
+    if (retryTimerId) { clearTimeout(retryTimerId); retryTimerId = null; }
+    debounceTimers.forEach((t) => clearTimeout(t));
+    debounceTimers.clear();
+
+    try {
+      if (client && authReady && sessionConfirmed && (typeof global.navigator === 'undefined' || global.navigator.onLine !== false)) {
+        await flushOutbox(true);
+      }
+    } catch (_) {}
+
+    try {
+      if (client) await client.auth.signOut();
+    } catch (_) {}
+
+    authReady = false;
+    sessionConfirmed = false;
+    userId = null;
+    userEmail = null;
+    accessToken = null;
+    readyPromise = null;
+    syncState = 'idle';
+    lastSyncError = null;
+    sessionId = null;
+
+    try {
+      global.localStorage.removeItem(SESSION_STORAGE_KEY);
+      global.localStorage.removeItem(CACHE_STORAGE_KEY);
+      global.localStorage.removeItem(OUTBOX_STORAGE_KEY);
+      global.localStorage.removeItem(DEAD_LETTER_KEY);
+    } catch (_) {}
+
+    setConnectionState('offline', 'Signed out');
+    return { ok: true, error: null };
+  }
+
+  async function ensureAuthenticatedSession() {
+    const auth = await getAuthSession();
+    if (!auth.authenticated || !auth.user) {
+      return { ok: false, requiresAuth: true, error: auth.error || 'Authentication required' };
+    }
+    return { ok: true, userId: auth.user.id, email: auth.user.email };
   }
 
   /**
@@ -460,21 +603,18 @@
   async function initClientAndAuth() {
     sessionId = getOrCreateSessionId();
     sessionConfirmed = false;
-    const check = validateConfig();
-    if (!check.valid) {
-      configured = false; authReady = false; restConfig = null;
-      if (check.reason.includes('service_role')) {
-        console.error('[OMNIS_DB]', check.reason);
-        setConnectionState('connection_failed', check.reason);
+    const init = ensureSupabaseClient();
+    if (!init.ok) {
+      authReady = false;
+      if (init.error && init.error.includes('service_role')) {
+        console.error('[OMNIS_DB]', init.error);
+        setConnectionState('connection_failed', init.error);
       } else {
-        console.info('[OMNIS_DB]', check.reason);
-        setConnectionState('offline', check.reason);
+        setConnectionState('offline', init.error || 'Supabase not configured');
       }
-      return { ok: false, offline: true, sessionId, userId: null, error: check.reason };
+      return { ok: false, offline: true, sessionId, userId: null, error: init.error };
     }
 
-    configured = true;
-    restConfig = { url: check.url, key: check.key };
     if (typeof global.navigator !== 'undefined' && global.navigator.onLine === false) {
       setConnectionState('offline', 'Browser is offline');
       return { ok: false, offline: true, sessionId, userId: null, error: 'Browser is offline' };
@@ -482,32 +622,15 @@
 
     setConnectionState('connecting', null);
 
-    try {
-      if (!client) {
-        client = global.supabase.createClient(check.url, check.key, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
-        });
-        client.auth.onAuthStateChange((_ev, sess) => {
-          accessToken = sess ? sess.access_token : null;
-          if (sess && sess.user) userId = sess.user.id;
-        });
-      }
-    } catch (err) {
-      const msg = err && err.message ? err.message : String(err);
-      configured = false;
-      setConnectionState('connection_failed', msg);
-      return { ok: false, offline: true, sessionId, userId: null, error: msg };
-    }
-
-    const authRes = await ensureAnonymousSession();
+    const authRes = await ensureAuthenticatedSession();
     if (!authRes.ok) {
       authReady = false;
-      setConnectionState('connection_failed', authRes.error);
-      return { ok: false, offline: true, sessionId, userId: null, error: authRes.error };
+      setConnectionState('offline', authRes.error);
+      return { ok: false, requiresAuth: Boolean(authRes.requiresAuth), offline: false, sessionId, userId: null, error: authRes.error };
     }
     authReady = true;
 
-    const sessRes = await ensureConfirmedSession(check);
+    const sessRes = await ensureConfirmedSession(init.check);
     if (!sessRes.ok) {
       setConnectionState('connection_failed', sessRes.error);
       return { ok: false, offline: true, sessionId, userId, error: sessRes.error };
@@ -1246,20 +1369,22 @@
   if (typeof global.addEventListener === 'function') {
     global.addEventListener('offline', () => setConnectionState('offline', 'Network offline'));
     global.addEventListener('online', () => {
-      if (!configured || !authReady || !sessionConfirmed) { readyPromise = null; ready(); }
+      if (!authReady) return;
+      if (!configured || !sessionConfirmed) { readyPromise = null; ready(); }
       else touchSession();
     });
     global.addEventListener('beforeunload', flushOnUnload);
   }
   if (typeof global.document !== 'undefined' && typeof global.document.addEventListener === 'function') {
     global.document.addEventListener('visibilitychange', () => {
-      if (global.document.visibilityState === 'visible') flushOutbox();
+      if (global.document.visibilityState === 'visible' && authReady) flushOutbox();
     });
   }
 
   const dbApi = {
-    STATUS_EVENT_NAME, ready, touchSession, getStatus: buildStatusSnapshot, onStatusChange,
-    getClient: () => client, getSessionId: () => sessionId, getUserId: () => userId, generateUUID,
+    STATUS_EVENT_NAME, AUTH_SIGNOUT_EVENT_NAME, ready, touchSession, getStatus: buildStatusSnapshot, onStatusChange,
+    getAuthSession, signInWithPassword, signOutUser,
+    getClient: () => client, getSessionId: () => sessionId, getUserId: () => userId, getUserEmail: () => userEmail, generateUUID,
     isSessionConfirmed: () => sessionConfirmed,
     enqueueWrite, flushOutbox, getOutbox, getDeadLetters, clearDeadLetters,
     saveQueueSnapshot, softDeleteQueueItems, recordSimulationRun, recordRecoveryEvent,
@@ -1268,5 +1393,5 @@
 
   Object.defineProperty(dbApi, 'isOnline', { enumerable: true, get: computeIsOnline });
   global.OMNIS_DB = dbApi;
-  ready();
+  ensureSupabaseClient();
 })(window);

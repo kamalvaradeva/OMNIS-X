@@ -541,43 +541,144 @@
   font-weight: 800;
   cursor: pointer;
   letter-spacing: 0.01em;
-  transition: background 0.15s ease, transform 0.12s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.15s ease, transform 0.12s ease, opacity 0.15s ease;
 }
 
-#loginLandingPage .btn-login-submit:hover {
+#loginLandingPage .btn-login-submit:hover:not(:disabled) {
   background: var(--login-yellow-hover);
   transform: translateY(-1px);
 }
 
-#loginLandingPage .btn-login-submit:active {
+#loginLandingPage .btn-login-submit:active:not(:disabled) {
   transform: translateY(0);
 }
 
-#loginLandingPage .demo-creds-bar {
-  padding-top: 10px;
-  border-top: 1px solid var(--login-border);
+#loginLandingPage .btn-login-submit:disabled {
+  opacity: 0.78;
+  cursor: wait;
+}
+
+#loginLandingPage .btn-login-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2.2px solid rgba(8, 15, 29, 0.25);
+  border-top-color: #080f1d;
+  border-radius: 50%;
+  animation: loginSpin 0.7s linear infinite;
+}
+
+#loginLandingPage .btn-login-spinner.hidden {
+  display: none;
+}
+
+@keyframes loginSpin {
+  to { transform: rotate(360deg); }
+}
+
+#loginLandingPage .demo-access-card {
+  margin-top: 2px;
+  padding: 12px 14px;
+  border-radius: 13px;
+  background: rgba(8, 15, 29, 0.72);
+  border: 1px solid var(--login-border);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+#loginLandingPage .demo-access-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#loginLandingPage .demo-access-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--login-yellow);
+}
+
+#loginLandingPage .demo-access-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--login-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--login-border);
+}
+
+#loginLandingPage .demo-creds-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+#loginLandingPage .demo-cred-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  font-size: 11.5px;
   color: var(--login-muted);
 }
 
+#loginLandingPage .demo-cred-row code {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11.8px;
+  color: var(--login-white);
+  background: rgba(30, 41, 59, 0.95);
+  padding: 2px 7px;
+  border-radius: 6px;
+  border: 1px solid rgba(51, 65, 85, 0.8);
+}
+
 #loginLandingPage .demo-fill-btn {
-  border: 1px solid rgba(255, 212, 59, 0.35);
-  background: rgba(255, 212, 59, 0.1);
+  width: 100%;
+  border: 1px solid rgba(253, 230, 138, 0.38);
+  background: rgba(253, 230, 138, 0.1);
   color: var(--login-yellow);
-  border-radius: 7px;
-  padding: 4px 9px;
-  font-size: 11px;
+  border-radius: 9px;
+  padding: 7px 12px;
+  font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 #loginLandingPage .demo-fill-btn:hover {
-  background: rgba(255, 212, 59, 0.2);
+  background: rgba(253, 230, 138, 0.2);
+  border-color: rgba(253, 230, 138, 0.65);
+}
+
+.sidebar-user-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  padding-top: 4px;
+}
+
+.sidebar-user-row.hidden {
+  display: none;
+}
+
+.sidebar-user-row strong {
+  color: #fde68a;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 145px;
 }
 
 /* Dashboard Sign Out button inside Sidebar Footer */

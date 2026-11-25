@@ -9,14 +9,12 @@
   const SLIDE_INTERVAL_MS = 3000;
   const SLIDE_TRANSITION_MS = 900;
   const TEXT_SWAP_MS = 260;
-  const AUTH_STORAGE_KEY = 'omnisx_authenticated_user';
 
-  const VALID_CREDENTIALS = [
-    { user: 'admin@jgit.edu.in', pass: 'omnisx', role: 'Campus Operations Admin' },
-    { user: 'admin', pass: 'admin123', role: 'Campus Operations Admin' },
-    { user: 'omnis@jgit.edu.in', pass: 'omnisx123', role: 'Resilience Commander' },
-    { user: 'principal@jgit.edu.in', pass: 'jgit2026', role: 'Institutional Head' }
-  ];
+  // Demo credentials ONLY for the convenience "Use Demo Credentials" auto-fill button (never verified client-side)
+  const DEMO_CREDENTIALS = {
+    email: 'admin@omnisx.com',
+    password: 'OmnisX@2026'
+  };
 
   const SLIDES = [
     {
@@ -79,8 +77,13 @@
       username: document.getElementById('loginUsername'),
       password: document.getElementById('loginPassword'),
       btnTogglePw: document.getElementById('btnTogglePassword'),
+      btnSubmit: document.getElementById('btnLoginSubmit'),
+      spinner: document.getElementById('loginSpinner'),
+      btnLabel: document.getElementById('loginBtnLabel'),
       errorBox: document.getElementById('loginErrorMsg'),
       btnDemoFill: document.getElementById('btnFillDemoCreds'),
+      sidebarUserRow: document.getElementById('sidebarAuthUserRow'),
+      sidebarUserEmail: document.getElementById('sidebarAuthUserEmail'),
       btnSignOut: document.getElementById('btnSidebarSignOut')
     };
   }
@@ -253,34 +256,16 @@
     }
   }
 
-  function enterDashboard(userLabel) {
+  let isAuthenticating = false;
+
+  function setAuthLoading(loading) {
     const els = getEls();
-    isLoggedIn = true;
-    stopSlideshow();
-    try {
-      global.sessionStorage.setItem(AUTH_STORAGE_KEY, userLabel);
-    } catch (_) {}
-
-    if (els.landing) els.landing.classList.add('hidden');
-    if (els.appShell) els.appShell.classList.remove('hidden');
-  }
-
-  function signOutToLanding() {
-    const els = getEls();
-    isLoggedIn = false;
-    isPaused = false;
-    try {
-      global.sessionStorage.removeItem(AUTH_STORAGE_KEY);
-    } catch (_) {}
-
-    if (els.appShell) els.appShell.classList.add('hidden');
-    if (els.landing) els.landing.classList.remove('hidden');
-    if (els.errorBox) {
-      els.errorBox.classList.add('hidden');
-      els.errorBox.textContent = '';
-    }
-    goToSlide(0);
-    startSlideshow();
+    isAuthenticating = Boolean(loading);
+    if (els.btnSubmit) els.btnSubmit.disabled = isAuthenticating;
+    if (els.spinner) els.spinner.classList.toggle('hidden', !isAuthenticating);
+    if (els.btnLabel) els.btnLabel.textContent = isAuthenticating ? 'Authenticating...' : 'Sign In';
+    if (els.username) els.username.disabled = isAuthenticating;
+    if (els.password) els.password.disabled = isAuthenticating;
   }
 
   function showLoginError(msg) {
@@ -290,22 +275,108 @@
     els.errorBox.classList.remove('hidden');
   }
 
-  function validateAndAuthenticate(uRaw, pRaw) {
-    const u = String(uRaw || '').trim().toLowerCase();
-    const p = String(pRaw || '');
-    if (!u || !p) {
-      return { ok: false, error: 'Please enter both username/email and password.' };
+  function clearLoginError() {
+    const els = getEls();
+    if (!els.errorBox) return;
+    els.errorBox.classList.add('hidden');
+    els.errorBox.textContent = '';
+  }
+
+  function mapSupabaseAuthError(rawMsg) {
+    const s = String(rawMsg || '');
+    const low = s.toLowerCase();
+    if (low.includes('invalid login credentials') || low.includes('invalid_credentials')) {
+      return 'Incorrect email or password. Please verify your credentials and try again.';
     }
-    const match = VALID_CREDENTIALS.find((c) => c.user === u && c.pass === p);
-    if (!match) {
-      return { ok: false, error: 'Invalid institutional credentials. Use admin@jgit.edu.in / omnisx.' };
+    if (low.includes('email not confirmed')) {
+      return 'Account created, but email confirmation is enabled in Supabase. Confirm admin@omnisx.com in Supabase Dashboard -> Authentication -> Users.';
     }
-    return { ok: true, account: match };
+    if (low.includes('too many requests') || low.includes('rate limit')) {
+      return 'Too many login attempts. Please wait a moment and try again.';
+    }
+    if (low.includes('network') || low.includes('fetch')) {
+      return 'Unable to reach Supabase authentication service. Check your internet connection.';
+    }
+    return s || 'Authentication failed. Please try again.';
+  }
+
+  async function enterDashboard(userObj) {
+    const els = getEls();
+    isLoggedIn = true;
+    stopSlideshow();
+    clearLoginError();
+
+    const emailText = userObj && userObj.email ? userObj.email : '';
+    if (els.sidebarUserRow && els.sidebarUserEmail) {
+      els.sidebarUserEmail.textContent = emailText || 'Authenticated Admin';
+      els.sidebarUserRow.classList.toggle('hidden', !emailText);
+    }
+
+    if (els.landing) els.landing.classList.add('hidden');
+    if (els.appShell) els.appShell.classList.remove('hidden');
+
+    if (global.OMNIS_APP && typeof global.OMNIS_APP.activateDashboard === 'function') {
+      await global.OMNIS_APP.activateDashboard();
+    }
+  }
+
+  async function signOutToLanding(skipDbSignOut = false) {
+    const els = getEls();
+    if (!skipDbSignOut && global.OMNIS_DB && typeof global.OMNIS_DB.signOutUser === 'function') {
+      if (els.btnSignOut) {
+        els.btnSignOut.disabled = true;
+        els.btnSignOut.textContent = 'Logging out...';
+      }
+      await global.OMNIS_DB.signOutUser();
+      if (els.btnSignOut) {
+        els.btnSignOut.disabled = false;
+        els.btnSignOut.textContent = 'Logout';
+      }
+    }
+
+    isLoggedIn = false;
+    isPaused = false;
+    setAuthLoading(false);
+    clearLoginError();
+
+    if (global.OMNIS_APP && typeof global.OMNIS_APP.deactivateDashboard === 'function') {
+      global.OMNIS_APP.deactivateDashboard();
+    }
+    if (els.sidebarUserRow) els.sidebarUserRow.classList.add('hidden');
+    if (els.password) {
+      els.password.value = '';
+      els.password.type = 'password';
+    }
+    if (els.btnTogglePw) {
+      els.btnTogglePw.textContent = 'Show';
+      els.btnTogglePw.setAttribute('aria-pressed', 'false');
+    }
+
+    if (els.appShell) els.appShell.classList.add('hidden');
+    if (els.landing) els.landing.classList.remove('hidden');
+    goToSlide(0);
+    startSlideshow();
+  }
+
+  function validateInputs(emailRaw, passwordRaw) {
+    const email = String(emailRaw || '').trim();
+    const password = String(passwordRaw || '');
+    if (!email) {
+      return { ok: false, error: 'Please enter your institutional email address.', focusField: 'email' };
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return { ok: false, error: 'Please enter a valid email address (e.g. admin@omnisx.com).', focusField: 'email' };
+    }
+    if (!password) {
+      return { ok: false, error: 'Please enter your password.', focusField: 'password' };
+    }
+    return { ok: true, email, password };
   }
 
   function bindLoginEvents() {
     const els = getEls();
-    if (!els.landing) return;
+    if (!els.landing || els.landing.dataset.loginBound === '1') return;
+    els.landing.dataset.loginBound = '1';
 
     if (els.btnPrev) {
       els.btnPrev.addEventListener('click', () => {
@@ -341,52 +412,72 @@
         els.password.type = showing ? 'password' : 'text';
         els.btnTogglePw.textContent = showing ? 'Show' : 'Hide';
         els.btnTogglePw.setAttribute('aria-pressed', String(!showing));
+        els.btnTogglePw.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
       });
     }
 
     if (els.btnDemoFill && els.username && els.password) {
       els.btnDemoFill.addEventListener('click', () => {
-        els.username.value = 'admin@jgit.edu.in';
-        els.password.value = 'omnisx';
-        if (els.errorBox) els.errorBox.classList.add('hidden');
-        els.username.focus();
+        if (isAuthenticating) return;
+        els.username.value = DEMO_CREDENTIALS.email;
+        els.password.value = DEMO_CREDENTIALS.password;
+        clearLoginError();
+        els.password.focus();
       });
     }
 
     if (els.form) {
-      els.form.addEventListener('submit', (e) => {
+      els.form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (els.errorBox) els.errorBox.classList.add('hidden');
-        enterDashboard('JGIT Institutional Portal');
+        if (isAuthenticating) return;
+        clearLoginError();
+
+        const check = validateInputs(els.username ? els.username.value : '', els.password ? els.password.value : '');
+        if (!check.ok) {
+          showLoginError(check.error);
+          if (check.focusField === 'email' && els.username) els.username.focus();
+          else if (els.password) els.password.focus();
+          return;
+        }
+
+        if (!global.OMNIS_DB || typeof global.OMNIS_DB.signInWithPassword !== 'function') {
+          showLoginError('Authentication service is unavailable.');
+          return;
+        }
+
+        setAuthLoading(true);
+        const res = await global.OMNIS_DB.signInWithPassword(check.email, check.password);
+        setAuthLoading(false);
+
+        if (!res || !res.ok) {
+          showLoginError(mapSupabaseAuthError(res && res.error));
+          if (els.password) els.password.focus();
+          return;
+        }
+
+        await enterDashboard(res.user);
       });
     }
 
     if (els.btnSignOut) {
-      els.btnSignOut.addEventListener('click', signOutToLanding);
+      els.btnSignOut.addEventListener('click', () => signOutToLanding(false));
     }
+
+    global.addEventListener('omnis:auth-signed-out', () => {
+      if (isLoggedIn) signOutToLanding(true);
+    });
   }
 
-  function initLoginLanding() {
+  async function initLoginLanding() {
     const els = getEls();
     if (!els.landing || !els.appShell) return;
 
+    // Enforce unauthenticated landing guard on initial render before checking Supabase session
+    els.appShell.classList.add('hidden');
+    els.landing.classList.remove('hidden');
+
     buildSlideDom();
     bindLoginEvents();
-
-    // Check existing session
-    let existingUser = null;
-    try {
-      existingUser = global.sessionStorage.getItem(AUTH_STORAGE_KEY);
-    } catch (_) {}
-
-    if (existingUser) {
-      enterDashboard(existingUser);
-      return;
-    }
-
-    // Show login landing, preload all 4 images cleanly, then launch slideshow
-    els.landing.classList.remove('hidden');
-    els.appShell.classList.add('hidden');
     updateIndicators();
 
     preloadImages().then(() => {
@@ -394,17 +485,25 @@
         startSlideshow();
       }
     });
+
+    // Verify real Supabase session on load
+    if (global.OMNIS_DB && typeof global.OMNIS_DB.getAuthSession === 'function') {
+      const auth = await global.OMNIS_DB.getAuthSession();
+      if (auth && auth.authenticated && auth.user) {
+        await enterDashboard(auth.user);
+      }
+    }
   }
 
   global.OMNIS_LOGIN = {
     SLIDE_INTERVAL_MS,
     SLIDES,
-    VALID_CREDENTIALS,
+    DEMO_CREDENTIALS,
     goToSlide,
     togglePause,
     enterDashboard,
     signOutToLanding,
-    getState: () => ({ activeIndex, isPaused, isLoggedIn, hasTimer: Boolean(slideTimerId) })
+    getState: () => ({ activeIndex, isPaused, isLoggedIn, isAuthenticating, hasTimer: Boolean(slideTimerId) })
   };
 
   if (document.readyState === 'loading') {
