@@ -57,6 +57,10 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
           <span>Institutional Data</span>
         </button>
+        <button class="nav-item" data-view="readiness">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          <span>Readiness Audit</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -420,12 +424,84 @@
           </div>
         </section>
 
+        <!-- VIEW 7: ZERO-FAILURE READINESS AUDIT -->
+        <section class="view" id="view-readiness">
+          <div class="card">
+            <div class="card-header wrap-header">
+              <div>
+                <h2>Zero-Failure Readiness Audit (N-1 &amp; Optional N-2)</h2>
+                <p class="card-sub">Automated stress test across all faculty, classrooms, laboratories, buses, power zones &amp; admin systems</p>
+              </div>
+              <div class="action-group" style="align-items:center;">
+                <label class="inline-label" style="cursor:pointer;">
+                  <input type="checkbox" id="cbAuditIncludeN2">
+                  Include N-2 Top 15 Pairs
+                </label>
+                <button class="btn btn-primary" id="btnRunReadinessAudit">Run Readiness Audit</button>
+                <button class="btn btn-ghost btn-sm" id="btnClearReadinessAudit">Clear Saved Audit</button>
+              </div>
+            </div>
+            <div class="audit-progress-wrap hidden" id="auditProgressWrap">
+              <div class="audit-progress-meta">
+                <span id="auditProgressText">Initializing audit...</span>
+                <strong id="auditProgressPct">0%</strong>
+              </div>
+              <div class="audit-progress-track">
+                <div class="audit-progress-fill" id="auditProgressFill" style="width:0%"></div>
+              </div>
+            </div>
+            <div id="readinessSummaryContainer"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header wrap-header">
+              <div>
+                <h2>Single Points of Failure (SPOF) Leaderboard</h2>
+                <p class="card-sub">Click any row to load that failure directly into the Disruption Simulator; click column headers to sort</p>
+              </div>
+              <div class="filter-bar">
+                <label class="inline-label">
+                  Category:
+                  <select id="readinessCategoryFilter" class="select-input">
+                    <option value="ALL">All Resources</option>
+                    <option value="Faculty">Faculty</option>
+                    <option value="Classroom">Classrooms</option>
+                    <option value="Exam Hall">Exam Halls</option>
+                    <option value="Laboratory">Laboratories</option>
+                    <option value="Bus">Buses</option>
+                    <option value="Power Zone">Power Zones</option>
+                    <option value="Admin">Admin Systems</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="table-scroll" id="readinessLeaderboardWrap"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header wrap-header">
+              <div>
+                <h2>Weekly Vulnerability Heatmap (Resources &times; Day / Slot)</h2>
+                <p class="card-sub">Highest-risk resources plotted across Mon–Fri &times; S1–S5, colored by affected session blast radius</p>
+              </div>
+              <div class="legend-row" style="margin-bottom:0;">
+                <span class="legend-item"><i class="dot" style="background:#e2e8f0"></i>0</span>
+                <span class="legend-item"><i class="dot" style="background:#fde68a"></i>1</span>
+                <span class="legend-item"><i class="dot" style="background:#fdba74"></i>2–3</span>
+                <span class="legend-item"><i class="dot" style="background:#f87171"></i>4+ Sessions</span>
+              </div>
+            </div>
+            <div class="table-scroll" id="readinessHeatmapWrap"></div>
+          </div>
+        </section>
+
       </main>
     </div>
   </div>
 
   <script src="data.js"></script>
   <script src="engine.js"></script>
+  <script src="readiness.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -55,7 +55,14 @@
     ttSectionFilter: 'SEC-CSE-1',
     ttModeFilter: 'SIDE_BY_SIDE',
     dataTab: 'departments',
-    dataSearch: ''
+    dataSearch: '',
+    readinessAudit: null,
+    readinessRunning: false,
+    readinessProgress: null,
+    readinessIncludeN2: false,
+    readinessSortKey: 'riskScore',
+    readinessSortDir: 'desc',
+    readinessCategoryFilter: 'ALL'
   };
 
   function getScenarioLabel(type) {
@@ -420,6 +427,10 @@
     data: {
       title: 'Institutional Data Registry',
       subtitle: '5 Departments • 50 Faculty • 1,200 Students (20 Sections) • 25 Classrooms • 10 Labs • 8 Buses'
+    },
+    readiness: {
+      title: 'Zero-Failure Readiness Audit',
+      subtitle: 'N-1 & N-2 institutional stress testing, Single Points of Failure ranking & weekly vulnerability heatmap'
     }
   };
 
@@ -2949,6 +2960,7 @@
     if (appState.activeView === 'recovery') renderRecoveryView();
     if (appState.activeView === 'timetable') renderTimetableView();
     if (appState.activeView === 'data') renderDataView();
+    if (appState.activeView === 'readiness') renderReadinessView();
   }
 
   function renderAll() {
@@ -2959,9 +2971,386 @@
     renderRecoveryView();
     renderTimetableView();
     renderDataView();
+    renderReadinessView();
   }
 
   // ==================== EVENT WIRING ====================
+
+  // ==================== VIEW 7: READINESS AUDIT (FEATURE 1) ====================
+
+  /**
+   * Convert a single institutional resource ID from the Readiness Audit into a simulator
+   * config & navigate cleanly into the Disruption Simulator.
+   */
+  function loadResourceFailureIntoSimulator(resId) {
+    if (!resId) return;
+    const allWeekDates = DAYS.map((d) => baseState.meta.referenceWeek[d]);
+    let cfg = null;
+
+    if (resId.startsWith('FAC-')) {
+      const fac = baseState.faculty.find((f) => f.id === resId);
+      if (fac) {
+        cfg = {
+          scenarioType: 'SCN-FACULTY-ABSENCE',
+          department: fac.department,
+          scheduleMode: 'shared',
+          facultyCount: 1,
+          facultyIds: [fac.id],
+          facultyId: fac.id,
+          reason: 'Readiness Audit Stress Test',
+          dates: [...allWeekDates],
+          fullDay: true,
+          perDateTimes: false,
+          timePeriods: [{ startTime: OPERATING_HOURS.startTime, endTime: OPERATING_HOURS.endTime }],
+          dateTimePeriods: {}
+        };
+      }
+    } else if (resId.startsWith('LAB-')) {
+      const lab = baseState.labs.find((l) => l.id === resId);
+      if (lab) {
+        cfg = {
+          scenarioType: 'SCN-LAB-FAILURE',
+          department: lab.department,
+          labIds: [lab.id],
+          labId: lab.id,
+          failureType: 'equipment',
+          equipmentUnavailablePct: 100,
+          dates: [...allWeekDates],
+          fullDay: true,
+          perDateTimes: false,
+          timePeriods: [{ startTime: OPERATING_HOURS.startTime, endTime: OPERATING_HOURS.endTime }],
+          dateTimePeriods: {}
+        };
+      }
+    } else if (resId.startsWith('CR-')) {
+      const cr = baseState.classrooms.find((c) => c.id === resId);
+      if (cr && cr.type === 'exam-hall') {
+        const linkedExam = baseState.examinations.find((e) => e.roomId === cr.id) || baseState.examinations[0];
+        cfg = {
+          scenarioType: 'SCN-EXAM-HALL-FAILURE',
+          roomId: cr.id,
+          examId: linkedExam ? linkedExam.id : 'ALL',
+          reason: 'Readiness Audit Stress Test',
+          availableSeating: 0,
+          capacityUnavailablePct: 100,
+          dates: linkedExam ? [linkedExam.scheduledDate] : [...allWeekDates],
+          fullDay: true,
+          perDateTimes: false,
+          timePeriods: [{ startTime: OPERATING_HOURS.startTime, endTime: OPERATING_HOURS.endTime }],
+          dateTimePeriods: {}
+        };
+      } else if (cr) {
+        cfg = {
+          scenarioType: 'SCN-CLASSROOM-UNAVAILABLE',
+          building: cr.block,
+          classroomIds: [cr.id],
+          classroomId: cr.id,
+          reason: 'Readiness Audit Stress Test',
+          dates: [...allWeekDates],
+          fullDay: true,
+          perDateTimes: false,
+          timePeriods: [{ startTime: OPERATING_HOURS.startTime, endTime: OPERATING_HOURS.endTime }],
+          dateTimePeriods: {}
+        };
+      }
+    } else if (resId.startsWith('BUS-')) {
+      cfg = {
+        scenarioType: 'SCN-BUS-BREAKDOWN',
+        busIds: [resId],
+        busId: resId,
+        breakdownType: 'Readiness Audit Simulation',
+        dates: [...allWeekDates],
+        date: baseState.meta.referenceWeek.Mon,
+        startTime: '09:00',
+        restorationTime: '11:00',
+        spareBusAvailable: false
+      };
+    } else if (resId === 'ADM-02' || resId.startsWith('PZ-')) {
+      cfg = {
+        scenarioType: 'SCN-POWER-FAILURE',
+        powerZone: resId.startsWith('PZ-') ? resId : 'PZ-1',
+        failureSource: resId === 'ADM-02' ? 'Main Substation (ADM-02)' : `Zone Feeder (${resId})`,
+        dates: [...allWeekDates],
+        fullDay: true,
+        startTime: OPERATING_HOURS.startTime,
+        endTime: OPERATING_HOURS.endTime,
+        backupAvailable: false,
+        backupCapacityPct: 0
+      };
+    } else {
+      cfg = { scenarioType: 'GENERIC_NODE', nodeId: resId };
+    }
+
+    if (!cfg) return;
+
+    appState.recoveryApplied = false;
+    appState.appliedPlanIndex = -1;
+    appState.selectedPlanIndex = 0;
+    appState.queuedFailureConfigs = [];
+    appState.editingQueueId = null;
+
+    if (cfg.scenarioType === 'GENERIC_NODE') {
+      appState.activeScenarioId = 'GENERIC_NODE';
+      appState.draftCards = [];
+      appState.activeFailureConfigs = [cfg];
+    } else {
+      appState.activeScenarioId = cfg.scenarioType;
+      const card = hydrateCardFromConfig(cfg);
+      appState.draftCards = card ? [card] : [];
+      appState.activeFailureConfigs = [cfg];
+    }
+
+    recomputeSimulation();
+    appState.selectedNodeId = resId;
+    switchView('simulator');
+    renderAll();
+
+    const m = appState.cascadeResult.metrics;
+    showBanner(
+      `Loaded SPOF "${resId}" into Disruption Simulator: ${m.impactedSessionsCount} impacted session(s), ${m.affectedStudents} affected students.`,
+      m.impactedSessionsCount > 0 ? 'danger' : 'info'
+    );
+  }
+
+  function startReadinessAudit() {
+    if (appState.readinessRunning || !window.OMNIS_READINESS) return;
+    appState.readinessRunning = true;
+    appState.readinessProgress = { completed: 0, total: 101, pct: 0, phase: 'Preparing...', currentLabel: '' };
+    renderReadinessView();
+
+    const includeN2 = Boolean(appState.readinessIncludeN2);
+    window.OMNIS_READINESS.runReadinessAudit(baseState, {
+      includeN2,
+      chunkSize: 5,
+      onProgress: (prog) => {
+        appState.readinessProgress = prog;
+        const wrap = document.getElementById('auditProgressWrap');
+        const fill = document.getElementById('auditProgressFill');
+        const txt = document.getElementById('auditProgressText');
+        const pctEl = document.getElementById('auditProgressPct');
+        if (wrap) wrap.classList.remove('hidden');
+        if (fill) fill.style.width = `${prog.pct}%`;
+        if (pctEl) pctEl.textContent = `${prog.pct}%`;
+        if (txt) txt.textContent = `${prog.phase}: testing ${prog.currentLabel || '...'} (${prog.completed}/${prog.total})`;
+      }
+    }).then((summary) => {
+      appState.readinessAudit = summary;
+      appState.readinessRunning = false;
+      appState.readinessProgress = null;
+      renderReadinessView();
+      showBanner(
+        `Readiness Audit completed: Score ${summary.readinessScore}/100 • Certified for ${summary.certifiedCount} of ${summary.totalCount} single failures (${summary.certifiedPct}%).`,
+        summary.failingItems.length > 0 ? 'info' : 'success'
+      );
+    });
+  }
+
+  function renderReadinessView() {
+    const sumWrap = document.getElementById('readinessSummaryContainer');
+    const lbWrap = document.getElementById('readinessLeaderboardWrap');
+    const hmWrap = document.getElementById('readinessHeatmapWrap');
+    const progWrap = document.getElementById('auditProgressWrap');
+    const btnRun = document.getElementById('btnRunReadinessAudit');
+    const cbN2 = document.getElementById('cbAuditIncludeN2');
+    const catSel = document.getElementById('readinessCategoryFilter');
+
+    if (!sumWrap || !lbWrap || !hmWrap) return;
+
+    if (btnRun) {
+      btnRun.disabled = appState.readinessRunning;
+      btnRun.textContent = appState.readinessRunning ? 'Running Audit...' : 'Run Readiness Audit';
+    }
+    if (cbN2) cbN2.checked = Boolean(appState.readinessIncludeN2);
+    if (catSel) catSel.value = appState.readinessCategoryFilter || 'ALL';
+
+    if (progWrap) {
+      if (appState.readinessRunning && appState.readinessProgress) {
+        progWrap.classList.remove('hidden');
+      } else {
+        progWrap.classList.add('hidden');
+      }
+    }
+
+    const audit = appState.readinessAudit;
+    if (!audit) {
+      sumWrap.innerHTML = `
+        <div class="builder-empty-state" style="margin-top:8px;">
+          No audit run yet. Click <strong>Run Readiness Audit</strong> to stress-test all faculty, classrooms, laboratories, buses, power zones &amp; admin systems (N-1${appState.readinessIncludeN2 ? ' + N-2 pairs' : ''}).
+        </div>
+      `;
+      lbWrap.innerHTML = `<p class="muted">Run the Readiness Audit above to populate the Single Points of Failure (SPOF) leaderboard.</p>`;
+      hmWrap.innerHTML = `<p class="muted">Run the Readiness Audit above to generate the Weekly Vulnerability Heatmap.</p>`;
+      return;
+    }
+
+    // a) Readiness Certificate + b) Score Gauge (reusing buildRadialGaugeSvg)
+    const gaugeHtml = buildRadialGaugeSvg(
+      'Zero-Failure Score',
+      audit.certifiedPct,
+      audit.readinessScore,
+      1,
+      `Certified: ${audit.certifiedCount}/${audit.totalCount} (${audit.certifiedPct}%)`
+    );
+
+    const failingBadges = audit.failingItems.length
+      ? audit.failingItems.slice(0, 12).map((f) => `
+          <button type="button" class="spof-fail-chip" data-audit-load-id="${escapeHtml(f.id)}" title="Click to load ${escapeHtml(f.id)} in Disruption Simulator">
+            ${escapeHtml(f.id)} (${f.studentsRemaining > 0 ? `${f.studentsRemaining} unrerouted` : `${f.recoveryPct}%`})
+          </button>
+        `).join('') + (audit.failingItems.length > 12 ? ` <span class="muted">+${audit.failingItems.length - 12} more</span>` : '')
+      : `<span class="badge badge-green">All ${audit.totalCount} single-failure scenarios 100% recoverable</span>`;
+
+    const n2SummaryHtml = audit.n2Items && audit.n2Items.length
+      ? `<div class="audit-n2-note"><strong>N-2 Pair Stress Test:</strong> ${audit.n2CertifiedCount}/${audit.n2Items.length} top risk pairs fully recoverable.</div>`
+      : '';
+
+    sumWrap.innerHTML = `
+      <div class="readiness-summary-grid">
+        <div class="readiness-cert-card">
+          <div class="cert-header-row">
+            <div>
+              <div class="cert-kicker">INSTITUTIONAL RESILIENCE CERTIFICATE</div>
+              <h3 class="cert-headline">Certified for ${audit.certifiedCount} of ${audit.totalCount} single failures (${audit.certifiedPct}%)</h3>
+            </div>
+            <span class="badge ${audit.failingItems.length === 0 ? 'badge-green' : 'badge-red'}">${audit.failingItems.length} Non-Zero Residual Risk</span>
+          </div>
+          <div class="cert-stats-row">
+            <div><span class="muted">Readiness Score</span><strong>${audit.readinessScore} / 100</strong></div>
+            <div><span class="muted">Avg Students Hit (Before)</span><strong>${audit.avgStudentsAffected}</strong></div>
+            <div><span class="muted">Critical Exams Unprotected</span><strong class="${audit.totalUnprotectedCritical > 0 ? 'text-red' : 'text-green'}">${audit.totalUnprotectedCritical}</strong></div>
+            <div><span class="muted">Last Evaluated</span><strong>${escapeHtml(new Date(audit.timestamp).toLocaleTimeString())}</strong></div>
+          </div>
+          ${n2SummaryHtml}
+          <div class="cert-failing-block">
+            <div class="cert-fail-label">Failing / Residual-Impact Resources (click to simulate):</div>
+            <div class="cert-fail-chips">${failingBadges}</div>
+          </div>
+        </div>
+        <div class="readiness-gauge-wrap">
+          ${gaugeHtml}
+        </div>
+      </div>
+    `;
+
+    // c) Sortable SPOF Leaderboard Table
+    const filterCat = appState.readinessCategoryFilter || 'ALL';
+    const baseList = filterCat === 'ALL' ? [...audit.items] : audit.items.filter((x) => x.category === filterCat);
+    const sortKey = appState.readinessSortKey || 'riskScore';
+    const dirMul = appState.readinessSortDir === 'asc' ? 1 : -1;
+
+    baseList.sort((a, b) => {
+      const va = a[sortKey];
+      const vb = b[sortKey];
+      if (typeof va === 'string' && typeof vb === 'string') return va.localeCompare(vb) * dirMul;
+      if (typeof va === 'boolean' && typeof vb === 'boolean') return ((va === vb ? 0 : va ? 1 : -1)) * dirMul;
+      return ((Number(va) || 0) - (Number(vb) || 0)) * dirMul;
+    });
+
+    const sortArrow = (k) => (sortKey === k ? (dirMul === 1 ? ' ▲' : ' ▼') : '');
+    const cols = [
+      { key: 'id', label: 'Resource ID' },
+      { key: 'category', label: 'Category' },
+      { key: 'impactedSessions', label: 'Impacted Sessions' },
+      { key: 'studentsAffected', label: 'Students Affected' },
+      { key: 'recoveryPct', label: 'Best Recovery %' },
+      { key: 'criticalUnprotected', label: 'Critical Unprotected' },
+      { key: 'recoveryCost', label: 'Recovery Cost' },
+      { key: 'fullyRecoverable', label: 'Readiness Status' }
+    ];
+
+    lbWrap.innerHTML = `
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            ${cols.map((c) => `<th><button type="button" class="sort-th-btn" data-audit-sort="${c.key}">${c.label}${sortArrow(c.key)}</button></th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${baseList.map((item, idx) => `
+            <tr class="audit-clickable-row ${item.fullyRecoverable ? '' : 'audit-row-fail'}" data-audit-load-id="${escapeHtml(item.id)}" title="Click to load ${escapeHtml(item.id)} in Disruption Simulator">
+              <td>${idx + 1}</td>
+              <td><strong>${escapeHtml(item.id)}</strong><br><span class="muted" style="font-size:11.5px;">${escapeHtml(item.name)}</span></td>
+              <td><span class="badge badge-gray">${escapeHtml(item.category)}</span></td>
+              <td>${item.impactedSessions}</td>
+              <td><strong>${item.studentsAffected}</strong>${item.studentsRemaining > 0 ? `<br><span class="text-red" style="font-size:11px;">${item.studentsRemaining} unrerouted</span>` : ''}</td>
+              <td><strong>${item.recoveryPct}%</strong></td>
+              <td class="${item.criticalUnprotected > 0 ? 'text-red' : ''}"><strong>${item.criticalUnprotected}</strong></td>
+              <td>${item.recoveryCost} pts</td>
+              <td><span class="badge ${item.fullyRecoverable ? 'badge-green' : 'badge-red'}">${item.fullyRecoverable ? 'Fully Recoverable' : 'Failing / Residual'}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      ${audit.n2Items && audit.n2Items.length ? `
+        <div style="margin-top:16px;">
+          <h3 style="margin:0 0 8px; font-size:14px;">Top ${audit.n2Items.length} N-2 Simultaneous Resource Failure Pairs</h3>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Resource Pair</th>
+                <th>Impacted Sessions</th>
+                <th>Students Affected</th>
+                <th>Best Recovery %</th>
+                <th>Critical Unprotected</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${audit.n2Items.map((p, idx) => `
+                <tr>
+                  <td>${idx + 1}</td>
+                  <td><strong>${escapeHtml(p.id)}</strong><br><span class="muted" style="font-size:11px;">${escapeHtml(p.name)}</span></td>
+                  <td>${p.impactedSessions}</td>
+                  <td>${p.studentsAffected} (${p.studentsRemaining} remaining)</td>
+                  <td><strong>${p.recoveryPct}%</strong></td>
+                  <td class="${p.criticalUnprotected > 0 ? 'text-red' : ''}">${p.criticalUnprotected}</td>
+                  <td><span class="badge ${p.fullyRecoverable ? 'badge-green' : 'badge-red'}">${p.fullyRecoverable ? 'Recoverable' : 'Unresolved'}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `;
+
+    // d) Vulnerability Heatmap (Top 16 highest-impact resources x 25 Day|Slot cells)
+    const heatRows = [...audit.items]
+      .filter((x) => x.impactedSessions > 0)
+      .sort((a, b) => b.riskScore - a.riskScore)
+      .slice(0, 16);
+
+    if (heatRows.length === 0) {
+      hmWrap.innerHTML = `<p class="muted">No scheduled session impacts detected.</p>`;
+    } else {
+      hmWrap.innerHTML = `
+        <table class="heatmap-table">
+          <thead>
+            <tr>
+              <th>Resource</th>
+              ${DAYS.map((d) => SLOTS.map((s) => `<th title="${d} ${s.label}">${d}<br><span>${s.id}</span></th>`).join('')).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${heatRows.map((row) => `
+              <tr>
+                <td class="heatmap-res-cell" data-audit-load-id="${escapeHtml(row.id)}" title="${escapeHtml(row.name)}">
+                  <strong>${escapeHtml(row.id)}</strong> <span class="muted" style="font-size:10.5px;">(${escapeHtml(row.category)})</span>
+                </td>
+                ${DAYS.map((d) => SLOTS.map((s) => {
+                  const k = `${d}|${s.id}`;
+                  const cnt = row.daySlotCounts[k] || 0;
+                  const cls = cnt === 0 ? 'hm-0' : cnt === 1 ? 'hm-1' : cnt <= 3 ? 'hm-2' : 'hm-4';
+                  return `<td class="hm-cell ${cls}" title="${escapeHtml(row.id)} on ${d} ${s.id}: ${cnt} impacted session(s)">${cnt || ''}</td>`;
+                }).join('')).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+  }
 
   function bindEvents() {
     // Sidebar navigation
@@ -3034,6 +3423,25 @@
       if (baPlanSvg) {
         appState.selectedPlanIndex = Number(baPlanSvg.dataset.planSelectSvg);
         renderAll();
+        return;
+      }
+
+      const sortThBtn = e.target.closest('[data-audit-sort]');
+      if (sortThBtn) {
+        const key = sortThBtn.dataset.auditSort;
+        if (appState.readinessSortKey === key) {
+          appState.readinessSortDir = appState.readinessSortDir === 'desc' ? 'asc' : 'desc';
+        } else {
+          appState.readinessSortKey = key;
+          appState.readinessSortDir = (key === 'id' || key === 'category') ? 'asc' : 'desc';
+        }
+        renderReadinessView();
+        return;
+      }
+
+      const loadAuditTarget = e.target.closest('[data-audit-load-id]');
+      if (loadAuditTarget) {
+        loadResourceFailureIntoSimulator(loadAuditTarget.dataset.auditLoadId);
         return;
       }
 
@@ -3504,9 +3912,40 @@
       appState.dataSearch = e.target.value;
       renderDataView();
     });
+
+    // Readiness Audit controls (Feature 1)
+    const btnRunAudit = document.getElementById('btnRunReadinessAudit');
+    if (btnRunAudit) btnRunAudit.addEventListener('click', startReadinessAudit);
+
+    const btnClearAudit = document.getElementById('btnClearReadinessAudit');
+    if (btnClearAudit) {
+      btnClearAudit.addEventListener('click', () => {
+        if (window.OMNIS_READINESS) window.OMNIS_READINESS.clearAuditResult();
+        appState.readinessAudit = null;
+        renderReadinessView();
+      });
+    }
+
+    const cbN2 = document.getElementById('cbAuditIncludeN2');
+    if (cbN2) {
+      cbN2.addEventListener('change', (e) => {
+        appState.readinessIncludeN2 = e.target.checked;
+      });
+    }
+
+    const catAudit = document.getElementById('readinessCategoryFilter');
+    if (catAudit) {
+      catAudit.addEventListener('change', (e) => {
+        appState.readinessCategoryFilter = e.target.value;
+        renderReadinessView();
+      });
+    }
   }
 
-  // Boot
+  // Boot (hydrate cached Readiness Audit if available in localStorage)
+  if (window.OMNIS_READINESS) {
+    appState.readinessAudit = window.OMNIS_READINESS.loadAuditResult();
+  }
   recomputeSimulation();
   bindEvents();
   renderAll();

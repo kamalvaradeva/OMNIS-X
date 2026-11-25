@@ -1961,3 +1961,227 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==================== FEATURE 1: READINESS AUDIT ==================== */
+
+.audit-progress-wrap {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #eff6ff;
+  border: 1px solid var(--blue-border);
+}
+
+.audit-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e3a8a;
+  margin-bottom: 6px;
+}
+
+.audit-progress-track {
+  width: 100%;
+  height: 8px;
+  background: #dbeafe;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.audit-progress-fill {
+  height: 100%;
+  background: var(--blue);
+  transition: width 0.12s linear;
+}
+
+.readiness-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 220px;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.readiness-cert-card {
+  border: 1px solid var(--border-strong);
+  border-left: 5px solid var(--blue);
+  border-radius: var(--radius-md);
+  background: var(--bg-subtle);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cert-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cert-kicker {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--blue);
+}
+
+.cert-headline {
+  margin: 2px 0 0;
+  font-size: 16.5px;
+  color: var(--text-primary);
+}
+
+.cert-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+}
+
+.cert-stats-row strong {
+  display: block;
+  font-size: 14.5px;
+  color: var(--text-primary);
+}
+
+.audit-n2-note {
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  border: 1px solid var(--blue-border);
+}
+
+.cert-failing-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cert-fail-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.cert-fail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spof-fail-chip {
+  border: 1px solid var(--red-border);
+  background: var(--red-bg);
+  color: #991b1b;
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.spof-fail-chip:hover {
+  background: #fecaca;
+}
+
+.readiness-gauge-wrap {
+  display: flex;
+  align-items: stretch;
+}
+
+.readiness-gauge-wrap .ba-gauge-card {
+  width: 100%;
+}
+
+.sort-th-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sort-th-btn:hover {
+  color: var(--blue);
+}
+
+.audit-clickable-row {
+  cursor: pointer;
+}
+
+.audit-clickable-row:hover td {
+  background: #eff6ff !important;
+}
+
+.audit-row-fail td:first-child {
+  border-left: 3px solid var(--red);
+}
+
+.heatmap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.heatmap-table th,
+.heatmap-table td {
+  border: 1px solid var(--border-color);
+  text-align: center;
+  padding: 4px 5px;
+}
+
+.heatmap-table th {
+  background: var(--bg-subtle);
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.heatmap-table th span {
+  display: block;
+  font-size: 9.5px;
+  color: var(--text-muted);
+}
+
+.heatmap-res-cell {
+  text-align: left !important;
+  white-space: nowrap;
+  cursor: pointer;
+  background: #ffffff;
+  min-width: 145px;
+}
+
+.heatmap-res-cell:hover {
+  background: #eff6ff;
+}
+
+.hm-cell {
+  min-width: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.hm-0 { background: #f8fafc; color: #94a3b8; }
+.hm-1 { background: #fef3c7; color: #92400e; }
+.hm-2 { background: #fed7aa; color: #9a3412; }
+.hm-4 { background: #fca5a5; color: #7f1d1d; }
+
+@media (max-width: 960px) {
+  .readiness-summary-grid {
+    grid-template-columns: 1fr;
+  }
+  .cert-stats-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
