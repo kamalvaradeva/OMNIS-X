@@ -62,6 +62,10 @@
   let sessionId = null;
   let userId = null;
   let userEmail = null;
+  let userRole = null;       // 'admin' | 'student' | null
+  let studentId = null;
+  let studentProfile = null;
+  let studentRealtimeChannel = null;
 
   // Authoritative separated connection + sync states
   let connectionState = 'offline'; // 'connecting' | 'connected' | 'offline' | 'connection_failed'
@@ -362,6 +366,9 @@
             sessionConfirmed = false;
             userId = null;
             userEmail = null;
+            userRole = null;
+            studentId = null;
+            studentProfile = null;
             accessToken = null;
             readyPromise = null;
             setConnectionState('offline', 'Signed out');
@@ -403,16 +410,111 @@
         sessionConfirmed = false;
         userId = null;
         userEmail = null;
+        userRole = null;
+        studentId = null;
+        studentProfile = null;
         accessToken = null;
-        return { authenticated: false, configured: true, user: null, session: null, error: null };
+        return { authenticated: false, configured: true, user: null, session: null, role: null, studentId: null, profile: null, error: null };
       }
       userId = sess.user.id;
       userEmail = sess.user.email || null;
       accessToken = sess.access_token || null;
       authReady = true;
-      return { authenticated: true, configured: true, user: sess.user, session: sess, error: null };
+      const roleInfo = await resolveUserRole();
+      return {
+        authenticated: true,
+        configured: true,
+        user: sess.user,
+        session: sess,
+        role: roleInfo.role,
+        studentId: roleInfo.studentId,
+        profile: roleInfo.profile,
+        roleError: roleInfo.error || null,
+        error: null
+      };
     } catch (err) {
-      return { authenticated: false, configured: true, user: null, session: null, error: err && err.message ? err.message : String(err) };
+      return { authenticated: false, configured: true, user: null, session: null, role: null, studentId: null, profile: null, error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  async function resolveUserRole() {
+    if (!client || !userId) {
+      return { role: null, studentId: null, profile: null, error: 'Not authenticated' };
+    }
+    try {
+      const { data, error } = await client
+        .from('user_roles')
+        .select('role,student_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) {
+        const msg = String(error.message || '');
+        const code = String(error.code || '');
+        const tableMissing = code === 'PGRST205' || code === '42P01' || msg.includes('user_roles');
+        // Graceful fallback ONLY if migration 002 hasn't been applied yet and user is not a student domain email
+        if (tableMissing && userEmail && !String(userEmail).toLowerCase().endsWith('@students.omnisx.com')) {
+          userRole = 'admin';
+          studentId = null;
+          studentProfile = null;
+          return { role: 'admin', studentId: null, profile: null, migrationPending: true, error: null };
+        }
+        userRole = null;
+        studentId = null;
+        studentProfile = null;
+        return { role: 'unauthorized', studentId: null, profile: null, error: msg || 'Role lookup failed' };
+      }
+
+      if (!data || !data.role) {
+        userRole = null;
+        studentId = null;
+        studentProfile = null;
+        return { role: 'unauthorized', studentId: null, profile: null, error: 'Account has no assigned OMNIS-X role in user_roles.' };
+      }
+
+      if (data.role === 'student') {
+        userRole = 'student';
+        studentId = data.student_id || null;
+        const profRes = await fetchStudentProfile(studentId);
+        if (!profRes.ok || !profRes.profile) {
+          return { role: 'unauthorized', studentId, profile: null, error: profRes.error || 'Student profile mapping not found.' };
+        }
+        studentProfile = profRes.profile;
+        return { role: 'student', studentId: studentProfile.student_id, profile: studentProfile, error: null };
+      }
+
+      if (data.role === 'admin') {
+        userRole = 'admin';
+        studentId = null;
+        studentProfile = null;
+        return { role: 'admin', studentId: null, profile: null, error: null };
+      }
+
+      return { role: 'unauthorized', studentId: null, profile: null, error: 'Unsupported role' };
+    } catch (err) {
+      return { role: 'unauthorized', studentId: null, profile: null, error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  async function fetchStudentProfile(targetStudentId) {
+    if (!client || !userId) return { ok: false, profile: null, error: 'Not authenticated' };
+    try {
+      let query = client
+        .from('student_profiles')
+        .select('student_id,full_name,department,semester,section_id,bus_id,hostel_id')
+        .eq('user_id', userId);
+      if (targetStudentId) {
+        query = client
+          .from('student_profiles')
+          .select('student_id,full_name,department,semester,section_id,bus_id,hostel_id')
+          .eq('student_id', targetStudentId);
+      }
+      const { data, error } = await query.maybeSingle();
+      if (error) return { ok: false, profile: null, error: error.message || 'Could not load student profile' };
+      if (!data) return { ok: false, profile: null, error: 'No matching student profile record authorized for this user.' };
+      return { ok: true, profile: data, error: null };
+    } catch (err) {
+      return { ok: false, profile: null, error: err && err.message ? err.message : String(err) };
     }
   }
 
@@ -445,9 +547,34 @@
       userEmail = data.user.email || cleanEmail;
       accessToken = data.session.access_token || null;
       authReady = true;
-      readyPromise = null;
-      await ready();
-      return { ok: true, user: data.user, session: data.session, error: null };
+
+      const roleInfo = await resolveUserRole();
+      if (roleInfo.role === 'admin') {
+        readyPromise = null;
+        await ready();
+        return { ok: true, user: data.user, session: data.session, role: 'admin', studentId: null, profile: null, error: null };
+      }
+      if (roleInfo.role === 'student') {
+        sessionConfirmed = false;
+        setConnectionState('connected', null);
+        return {
+          ok: true,
+          user: data.user,
+          session: data.session,
+          role: 'student',
+          studentId: roleInfo.studentId,
+          profile: roleInfo.profile,
+          error: null
+        };
+      }
+
+      try { await client.auth.signOut(); } catch (_) {}
+      authReady = false;
+      userId = null;
+      userEmail = null;
+      accessToken = null;
+      setConnectionState('offline', roleInfo.error || 'Unauthorized role');
+      return { ok: false, error: roleInfo.error || 'Your account does not have an assigned institutional role.' };
     } catch (err) {
       const msg = err && err.message ? err.message : String(err);
       setConnectionState('connection_failed', msg);
@@ -459,9 +586,10 @@
     if (retryTimerId) { clearTimeout(retryTimerId); retryTimerId = null; }
     debounceTimers.forEach((t) => clearTimeout(t));
     debounceTimers.clear();
+    unsubscribeStudentUpdates();
 
     try {
-      if (client && authReady && sessionConfirmed && (typeof global.navigator === 'undefined' || global.navigator.onLine !== false)) {
+      if (client && authReady && userRole === 'admin' && sessionConfirmed && (typeof global.navigator === 'undefined' || global.navigator.onLine !== false)) {
         await flushOutbox(true);
       }
     } catch (_) {}
@@ -474,6 +602,9 @@
     sessionConfirmed = false;
     userId = null;
     userEmail = null;
+    userRole = null;
+    studentId = null;
+    studentProfile = null;
     accessToken = null;
     readyPromise = null;
     syncState = 'idle';
@@ -1366,10 +1497,281 @@
     }
   }
 
+  // ==================== STUDENT RECOVERY COMMUNICATION & REALTIME ====================
+
+  function unsubscribeStudentUpdates() {
+    try {
+      if (client && studentRealtimeChannel) {
+        client.removeChannel(studentRealtimeChannel);
+      }
+    } catch (_) {}
+    studentRealtimeChannel = null;
+  }
+
+  async function resolveVerifiedRunId(rawRunId) {
+    if (!client || !userId || !sessionConfirmed || !rawRunId) return null;
+    try {
+      const { data, error } = await client
+        .from('simulation_runs')
+        .select('id')
+        .eq('id', rawRunId)
+        .maybeSingle();
+      if (!error && data && data.id) return data.id;
+    } catch (_) {}
+    return null;
+  }
+
+  async function publishAdminRecoveryToStudents(payload = {}) {
+    try {
+      if (typeof global.navigator !== 'undefined' && global.navigator.onLine === false) {
+        return { ok: false, error: 'Offline — cannot publish updates to Supabase.' };
+      }
+      const boot = await ready();
+      if (!boot.ok || !client || !userId || userRole !== 'admin' || !sessionConfirmed || !sessionId) {
+        return { ok: false, error: 'Admin database session not confirmed.' };
+      }
+      await flushOutbox(true);
+      const verifiedRunId = await resolveVerifiedRunId(payload.runId || null);
+      const nowIso = new Date().toISOString();
+
+      // Mark previous active wave rows inactive (non-destructive, preserves full history)
+      const { error: deactSchErr } = await client
+        .from('student_schedule_updates')
+        .update({ active: false, reverted_at: nowIso })
+        .eq('published_by', userId)
+        .eq('active', true);
+      if (deactSchErr) {
+        return { ok: false, error: deactSchErr.message || 'Failed to update prior student schedule rows.' };
+      }
+
+      const { error: deactNotifErr } = await client
+        .from('student_notifications')
+        .update({ active: false })
+        .eq('published_by', userId)
+        .eq('active', true);
+      if (deactNotifErr) {
+        return { ok: false, error: deactNotifErr.message || 'Failed to update prior student notifications.' };
+      }
+
+      const updates = Array.isArray(payload.scheduleUpdates) ? payload.scheduleUpdates : [];
+      if (updates.length > 0) {
+        const cleanUpdates = updates.map((u) => sanitizeJsonValue({
+          published_by: userId,
+          session_id: sessionId,
+          run_id: verifiedRunId,
+          client_update_id: String(u.client_update_id || generateUUID()),
+          batch_id: String(payload.batchId || u.batch_id || generateUUID()),
+          section_id: String(u.section_id),
+          activity_id: String(u.activity_id),
+          activity_kind: String(u.activity_kind || 'timetable'),
+          subject_name: String(u.subject_name || 'Campus Session'),
+          subject_code: u.subject_code ? String(u.subject_code) : null,
+          change_status: String(u.change_status || 'RESCHEDULED'),
+          previous_details: u.previous_details || {},
+          updated_details: u.updated_details || {},
+          reason: String(u.reason || 'Recovery plan applied'),
+          plan_rank: u.plan_rank || null,
+          plan_name: u.plan_name || null,
+          resolved: Boolean(u.resolved !== false),
+          active: true,
+          reverted_at: null
+        }));
+        const { error: upErr } = await client
+          .from('student_schedule_updates')
+          .upsert(cleanUpdates, { onConflict: 'client_update_id' });
+        if (upErr) {
+          return { ok: false, error: upErr.message || 'Failed to publish student schedule updates.' };
+        }
+      }
+
+      const notifs = Array.isArray(payload.notifications) ? payload.notifications : [];
+      if (notifs.length > 0) {
+        const cleanNotifs = notifs.map((n) => sanitizeJsonValue({
+          published_by: userId,
+          session_id: sessionId,
+          run_id: verifiedRunId,
+          client_notif_id: String(n.client_notif_id || generateUUID()),
+          batch_id: String(payload.batchId || n.batch_id || generateUUID()),
+          section_id: String(n.section_id),
+          activity_id: n.activity_id ? String(n.activity_id) : null,
+          change_status: String(n.change_status || 'RESCHEDULED'),
+          title: String(n.title || 'Schedule Update'),
+          description: String(n.description || ''),
+          previous_summary: n.previous_summary ? String(n.previous_summary) : null,
+          updated_summary: n.updated_summary ? String(n.updated_summary) : null,
+          affected_date_time: n.affected_date_time ? String(n.affected_date_time) : null,
+          reason: String(n.reason || 'Recovery plan applied'),
+          active: true,
+          reverted: false
+        }));
+        const { error: nErr } = await client
+          .from('student_notifications')
+          .upsert(cleanNotifs, { onConflict: 'client_notif_id' });
+        if (nErr) {
+          return { ok: false, error: nErr.message || 'Failed to publish student notifications.' };
+        }
+      }
+
+      return { ok: true, updatesCount: updates.length, notificationsCount: notifs.length, error: null };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  async function revertAdminRecoveryForStudents(payload = {}) {
+    try {
+      if (typeof global.navigator !== 'undefined' && global.navigator.onLine === false) {
+        return { ok: false, error: 'Offline — cannot revert student recovery state in Supabase.' };
+      }
+      const boot = await ready();
+      if (!boot.ok || !client || !userId || userRole !== 'admin' || !sessionConfirmed || !sessionId) {
+        return { ok: false, error: 'Admin database session not confirmed.' };
+      }
+      await flushOutbox(true);
+      const nowIso = new Date().toISOString();
+
+      const { data: activeRows, error: checkErr } = await client
+        .from('student_schedule_updates')
+        .select('id,section_id,subject_name,activity_id')
+        .eq('published_by', userId)
+        .eq('active', true);
+      if (checkErr) {
+        return { ok: false, error: checkErr.message || 'Could not query active student updates.' };
+      }
+
+      const activeSections = Array.from(new Set(
+        (activeRows || []).map((r) => r.section_id).concat(Array.isArray(payload.affectedSections) ? payload.affectedSections : [])
+      )).filter(Boolean);
+
+      const { error: updSchErr } = await client
+        .from('student_schedule_updates')
+        .update({ active: false, reverted_at: nowIso })
+        .eq('published_by', userId)
+        .eq('active', true);
+      if (updSchErr) {
+        return { ok: false, error: updSchErr.message || 'Failed to deactivate student schedule updates.' };
+      }
+
+      const { error: updNotifErr } = await client
+        .from('student_notifications')
+        .update({ active: false, reverted: true })
+        .eq('published_by', userId)
+        .eq('active', true);
+      if (updNotifErr) {
+        return { ok: false, error: updNotifErr.message || 'Failed to mark prior student notifications reverted.' };
+      }
+
+      if (activeSections.length > 0 && payload.emitRevertNotice !== false) {
+        const verifiedRunId = await resolveVerifiedRunId(payload.runId || null);
+        const batchId = payload.batchId || generateUUID();
+        const isReset = payload.eventType === 'reset';
+        const revNotifs = activeSections.map((secId) => sanitizeJsonValue({
+          published_by: userId,
+          session_id: sessionId,
+          run_id: verifiedRunId,
+          client_notif_id: `${batchId}::revert::${secId}`,
+          batch_id: batchId,
+          section_id: secId,
+          activity_id: null,
+          change_status: 'REVERTED',
+          title: isReset ? 'Schedule Restored (Simulation Reset)' : 'Recovery Plan Reverted — Schedule Restored',
+          description: isReset
+            ? `Your ${secId} timetable has been restored to the standard institutional schedule after simulation reset.`
+            : `The previously applied recovery adjustments for ${secId} were reverted by the administrator. Your timetable has been restored.`,
+          previous_summary: 'Applied recovery schedule overrides',
+          updated_summary: 'Original baseline institutional timetable restored',
+          affected_date_time: nowIso.slice(0, 10),
+          reason: String(payload.reason || 'Administrator reverted applied recovery plan'),
+          active: false,
+          reverted: false
+        }));
+        const { error: revInsErr } = await client
+          .from('student_notifications')
+          .upsert(revNotifs, { onConflict: 'client_notif_id' });
+        if (revInsErr) {
+          return { ok: false, error: revInsErr.message || 'Schedule restored, but correction notification write failed.' };
+        }
+      }
+
+      return { ok: true, revertedSections: activeSections, error: null };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  async function fetchStudentScheduleAndNotifications(sectionId) {
+    if (!client || !userId || userRole !== 'student' || !sectionId) {
+      return { ok: false, updates: [], notifications: [], error: 'Student session not authenticated.' };
+    }
+    try {
+      const [updRes, notifRes] = await Promise.all([
+        client
+          .from('student_schedule_updates')
+          .select('id,activity_id,activity_kind,section_id,subject_name,subject_code,change_status,previous_details,updated_details,reason,plan_rank,plan_name,resolved,active,created_at,updated_at')
+          .eq('section_id', sectionId)
+          .eq('active', true)
+          .order('created_at', { ascending: true }),
+        client
+          .from('student_notifications')
+          .select('id,client_notif_id,batch_id,section_id,activity_id,change_status,title,description,previous_summary,updated_summary,affected_date_time,reason,active,reverted,created_at,updated_at')
+          .eq('section_id', sectionId)
+          .order('created_at', { ascending: false })
+          .limit(40)
+      ]);
+      if (updRes.error) {
+        return { ok: false, updates: [], notifications: [], error: updRes.error.message || 'Could not load student schedule updates.' };
+      }
+      if (notifRes.error) {
+        return { ok: false, updates: updRes.data || [], notifications: [], error: notifRes.error.message || 'Could not load student notifications.' };
+      }
+      return {
+        ok: true,
+        updates: Array.isArray(updRes.data) ? updRes.data : [],
+        notifications: Array.isArray(notifRes.data) ? notifRes.data : [],
+        error: null
+      };
+    } catch (err) {
+      return { ok: false, updates: [], notifications: [], error: err && err.message ? err.message : String(err) };
+    }
+  }
+
+  function subscribeToStudentUpdates(sectionId, onChange, onChannelStatus) {
+    unsubscribeStudentUpdates();
+    if (!client || !userId || userRole !== 'student' || !sectionId) {
+      if (typeof onChannelStatus === 'function') onChannelStatus('FALLBACK');
+      return () => {};
+    }
+    try {
+      const chName = `omnis-student-${sectionId}-${Date.now()}`;
+      studentRealtimeChannel = client
+        .channel(chName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'student_schedule_updates', filter: `section_id=eq.${sectionId}` },
+          () => { if (typeof onChange === 'function') onChange('schedule'); }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'student_notifications', filter: `section_id=eq.${sectionId}` },
+          () => { if (typeof onChange === 'function') onChange('notifications'); }
+        )
+        .subscribe((status) => {
+          if (typeof onChannelStatus === 'function') {
+            if (status === 'SUBSCRIBED') onChannelStatus('SUBSCRIBED');
+            else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') onChannelStatus('FALLBACK');
+          }
+        });
+      return unsubscribeStudentUpdates;
+    } catch (_) {
+      if (typeof onChannelStatus === 'function') onChannelStatus('FALLBACK');
+      return () => {};
+    }
+  }
+
   if (typeof global.addEventListener === 'function') {
     global.addEventListener('offline', () => setConnectionState('offline', 'Network offline'));
     global.addEventListener('online', () => {
-      if (!authReady) return;
+      if (!authReady || userRole !== 'admin') return;
       if (!configured || !sessionConfirmed) { readyPromise = null; ready(); }
       else touchSession();
     });
@@ -1377,18 +1779,21 @@
   }
   if (typeof global.document !== 'undefined' && typeof global.document.addEventListener === 'function') {
     global.document.addEventListener('visibilitychange', () => {
-      if (global.document.visibilityState === 'visible' && authReady) flushOutbox();
+      if (global.document.visibilityState === 'visible' && authReady && userRole === 'admin') flushOutbox();
     });
   }
 
   const dbApi = {
     STATUS_EVENT_NAME, AUTH_SIGNOUT_EVENT_NAME, ready, touchSession, getStatus: buildStatusSnapshot, onStatusChange,
-    getAuthSession, signInWithPassword, signOutUser,
-    getClient: () => client, getSessionId: () => sessionId, getUserId: () => userId, getUserEmail: () => userEmail, generateUUID,
-    isSessionConfirmed: () => sessionConfirmed,
+    getAuthSession, resolveUserRole, fetchStudentProfile, signInWithPassword, signOutUser,
+    getClient: () => client, getSessionId: () => sessionId, getUserId: () => userId, getUserEmail: () => userEmail,
+    getUserRole: () => userRole, getStudentId: () => studentId, getStudentProfile: () => studentProfile,
+    generateUUID, isSessionConfirmed: () => sessionConfirmed,
     enqueueWrite, flushOutbox, getOutbox, getDeadLetters, clearDeadLetters,
     saveQueueSnapshot, softDeleteQueueItems, recordSimulationRun, recordRecoveryEvent,
-    recordReadinessAudit, recordNotifications, logAppEvent, restoreSessionState, fetchRecentRuns, exportUserData
+    recordReadinessAudit, recordNotifications, logAppEvent, restoreSessionState, fetchRecentRuns, exportUserData,
+    publishAdminRecoveryToStudents, revertAdminRecoveryForStudents,
+    fetchStudentScheduleAndNotifications, subscribeToStudentUpdates, unsubscribeStudentUpdates
   };
 
   Object.defineProperty(dbApi, 'isOnline', { enumerable: true, get: computeIsOnline });

@@ -1,0 +1,675 @@
+/* ==========================================================================
+   OMNIS-X — JGIT Student Dashboard (Isolated Scoped Stylesheet)
+   Theme: Dark Navy (#080F1D / #101A2E / #1E293B) & Pastel Yellow (#FDE68A)
+   ========================================================================== */
+
+#studentDashboardShell {
+  --st-bg-main: #080F1D;
+  --st-bg-panel: #101A2E;
+  --st-bg-card: #1E293B;
+  --st-accent: #FDE68A;
+  --st-accent-hover: #FCD34D;
+  --st-border: #334155;
+  --st-text-primary: #F8FAFC;
+  --st-text-secondary: #CBD5E1;
+
+  min-height: 100vh;
+  background: var(--st-bg-main);
+  color: var(--st-text-primary);
+  display: flex;
+}
+
+#studentDashboardShell.hidden {
+  display: none !important;
+}
+
+/* Sidebar */
+#studentDashboardShell .st-sidebar {
+  width: 272px;
+  flex-shrink: 0;
+  background: var(--st-bg-panel);
+  border-right: 1px solid var(--st-border);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+  gap: 16px;
+}
+
+#studentDashboardShell .st-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--st-border);
+}
+
+#studentDashboardShell .st-brand-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--st-accent);
+  color: var(--st-bg-main);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+#studentDashboardShell .st-brand-title {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-brand-sub {
+  font-size: 11.5px;
+  color: var(--st-accent);
+  font-weight: 600;
+}
+
+#studentDashboardShell .st-profile-card {
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-profile-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgba(253, 230, 138, 0.16);
+  border: 1px solid rgba(253, 230, 138, 0.45);
+  color: var(--st-accent);
+  font-weight: 800;
+  font-size: 13px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+#studentDashboardShell .st-profile-name {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--st-text-primary);
+  line-height: 1.25;
+}
+
+#studentDashboardShell .st-profile-id {
+  font-size: 12px;
+  color: var(--st-accent);
+  font-weight: 700;
+}
+
+#studentDashboardShell .st-profile-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid rgba(51, 65, 85, 0.7);
+  padding-top: 10px;
+  font-size: 12px;
+}
+
+#studentDashboardShell .st-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-meta-row strong {
+  color: var(--st-text-primary);
+  text-align: right;
+}
+
+#studentDashboardShell .st-sidebar-footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--st-border);
+}
+
+#studentDashboardShell .st-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--st-border);
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-sync-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+}
+
+#studentDashboardShell .st-sync-dot.fallback {
+  background: var(--st-accent);
+}
+
+#studentDashboardShell .st-logout-btn {
+  width: 100%;
+  padding: 9px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(253, 230, 138, 0.35);
+  background: rgba(253, 230, 138, 0.12);
+  color: var(--st-accent);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+#studentDashboardShell .st-logout-btn:hover {
+  background: var(--st-accent);
+  color: var(--st-bg-main);
+  border-color: var(--st-accent-hover);
+}
+
+/* Main Content */
+#studentDashboardShell .st-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  max-height: 100vh;
+}
+
+#studentDashboardShell .st-topbar {
+  background: var(--st-bg-panel);
+  border-bottom: 1px solid var(--st-border);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+#studentDashboardShell .st-topbar-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-topbar-sub {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-refresh-btn {
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg-card);
+  color: var(--st-text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+#studentDashboardShell .st-refresh-btn:hover {
+  border-color: var(--st-accent);
+  background: rgba(253, 230, 138, 0.12);
+}
+
+#studentDashboardShell .st-content {
+  padding: 22px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Alert Strip when incomplete/active disruption affects student */
+#studentDashboardShell .st-status-banner {
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg-card);
+  color: var(--st-text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#studentDashboardShell .st-status-banner.tone-warn {
+  background: rgba(253, 230, 138, 0.11);
+  border-color: rgba(253, 230, 138, 0.45);
+  color: var(--st-accent);
+}
+
+#studentDashboardShell .st-status-banner.tone-danger {
+  background: rgba(220, 38, 38, 0.16);
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+
+#studentDashboardShell .st-status-banner.tone-ok {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(74, 222, 128, 0.35);
+  color: #bbf7d0;
+}
+
+/* 3 Compact Summary Cards */
+#studentDashboardShell .st-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+#studentDashboardShell .st-kpi-card {
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#studentDashboardShell .st-kpi-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-kpi-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-kpi-card.is-accent .st-kpi-value {
+  color: var(--st-accent);
+}
+
+#studentDashboardShell .st-kpi-card.is-danger .st-kpi-value {
+  color: #f87171;
+}
+
+#studentDashboardShell .st-kpi-foot {
+  font-size: 12px;
+  color: var(--st-text-secondary);
+}
+
+/* Two-Column Workspace Grid */
+#studentDashboardShell .st-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(300px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+#studentDashboardShell .st-panel {
+  background: var(--st-bg-panel);
+  border: 1px solid var(--st-border);
+  border-radius: 14px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#studentDashboardShell .st-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-panel-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-panel-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--st-text-secondary);
+}
+
+/* Mode & Day Pills */
+#studentDashboardShell .st-pill-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+#studentDashboardShell .st-tab-btn {
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--st-border);
+  background: var(--st-bg-card);
+  color: var(--st-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+#studentDashboardShell .st-tab-btn.active {
+  background: var(--st-accent);
+  color: var(--st-bg-main);
+  border-color: var(--st-accent);
+  font-weight: 700;
+}
+
+#studentDashboardShell .st-tab-btn:hover:not(.active) {
+  border-color: var(--st-accent);
+  color: var(--st-text-primary);
+}
+
+/* Status Indicators */
+#studentDashboardShell .st-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#studentDashboardShell .status-unchanged {
+  background: rgba(51, 65, 85, 0.55);
+  color: var(--st-text-secondary);
+  border: 1px solid var(--st-border);
+}
+
+#studentDashboardShell .status-rescheduled {
+  background: var(--st-accent);
+  color: var(--st-bg-main);
+  border: 1px solid var(--st-accent-hover);
+}
+
+#studentDashboardShell .status-faculty,
+#studentDashboardShell .status-classroom,
+#studentDashboardShell .status-lab,
+#studentDashboardShell .status-transport {
+  background: rgba(56, 189, 248, 0.18);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.48);
+}
+
+#studentDashboardShell .status-cancelled {
+  background: rgba(220, 38, 38, 0.22);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.55);
+}
+
+#studentDashboardShell .status-reverted {
+  background: rgba(148, 163, 184, 0.16);
+  color: #e2e8f0;
+  border: 1px solid var(--st-border);
+}
+
+/* Timetable Entries List */
+#studentDashboardShell .st-tt-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-tt-card {
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border);
+  border-radius: 12px;
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#studentDashboardShell .st-tt-card.is-changed {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: inset 3px 0 0 #38bdf8;
+}
+
+#studentDashboardShell .st-tt-card.is-rescheduled {
+  border-color: rgba(253, 230, 138, 0.65);
+  box-shadow: inset 3px 0 0 var(--st-accent);
+}
+
+#studentDashboardShell .st-tt-card.is-cancelled {
+  border-color: rgba(248, 113, 113, 0.7);
+  box-shadow: inset 3px 0 0 #f87171;
+  background: rgba(127, 29, 29, 0.2);
+}
+
+#studentDashboardShell .st-tt-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#studentDashboardShell .st-tt-subject {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-tt-code {
+  font-size: 11.5px;
+  color: var(--st-accent);
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+#studentDashboardShell .st-tt-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-tt-grid strong {
+  color: var(--st-text-primary);
+  display: block;
+  font-weight: 600;
+}
+
+#studentDashboardShell .st-diff-box {
+  margin-top: 2px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  background: rgba(8, 15, 29, 0.68);
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  font-size: 12px;
+  color: var(--st-text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#studentDashboardShell .st-diff-box strong {
+  color: var(--st-text-primary);
+}
+
+/* Weekly Matrix */
+#studentDashboardShell .st-week-scroll {
+  overflow-x: auto;
+}
+
+#studentDashboardShell .st-week-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 680px;
+  font-size: 12px;
+}
+
+#studentDashboardShell .st-week-table th,
+#studentDashboardShell .st-week-table td {
+  border: 1px solid var(--st-border);
+  padding: 8px;
+  vertical-align: top;
+  text-align: left;
+}
+
+#studentDashboardShell .st-week-table th {
+  background: rgba(30, 41, 59, 0.9);
+  color: var(--st-accent);
+  font-weight: 700;
+}
+
+#studentDashboardShell .st-week-chip {
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+  padding: 6px 7px;
+  margin-bottom: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+#studentDashboardShell .st-week-chip.is-changed {
+  border-color: rgba(56, 189, 248, 0.65);
+}
+
+#studentDashboardShell .st-week-chip.is-rescheduled {
+  border-color: rgba(253, 230, 138, 0.75);
+}
+
+#studentDashboardShell .st-week-chip.is-cancelled {
+  border-color: rgba(248, 113, 113, 0.75);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+/* Notifications Panel */
+#studentDashboardShell .st-notif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#studentDashboardShell .st-notif-empty {
+  padding: 18px 14px;
+  border-radius: 11px;
+  background: var(--st-bg-card);
+  border: 1px dashed var(--st-border);
+  color: var(--st-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+#studentDashboardShell .st-notif-card {
+  background: var(--st-bg-card);
+  border: 1px solid var(--st-border);
+  border-radius: 12px;
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+#studentDashboardShell .st-notif-card.is-reverted {
+  opacity: 0.78;
+  border-style: dashed;
+}
+
+#studentDashboardShell .st-notif-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+#studentDashboardShell .st-notif-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-notif-desc {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--st-text-secondary);
+}
+
+#studentDashboardShell .st-notif-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.8px;
+  color: var(--st-text-secondary);
+  background: rgba(8, 15, 29, 0.55);
+  border-radius: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(51, 65, 85, 0.75);
+}
+
+#studentDashboardShell .st-notif-meta strong {
+  color: var(--st-text-primary);
+}
+
+#studentDashboardShell .st-notif-time {
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: right;
+}
+
+@media (max-width: 1120px) {
+  #studentDashboardShell .st-workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 860px) {
+  #studentDashboardShell {
+    flex-direction: column;
+  }
+  #studentDashboardShell .st-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--st-border);
+  }
+  #studentDashboardShell .st-main {
+    max-height: none;
+  }
+  #studentDashboardShell .st-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+  #studentDashboardShell .st-tt-grid {
+    grid-template-columns: 1fr;
+  }
+}

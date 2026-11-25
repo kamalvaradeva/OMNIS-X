@@ -15,6 +15,11 @@
     email: 'admin@omnisx.com',
     password: 'OmnisX@2026'
   };
+  const DEMO_STUDENT_CREDENTIALS = {
+    studentId: 'STU001',
+    password: 'Student@2026'
+  };
+  const INTERNAL_STUDENT_DOMAIN = 'students.omnisx.com';
 
   const SLIDES = [
     {
@@ -82,6 +87,18 @@
       btnLabel: document.getElementById('loginBtnLabel'),
       errorBox: document.getElementById('loginErrorMsg'),
       btnDemoFill: document.getElementById('btnFillDemoCreds'),
+      studentAccordionBtn: document.getElementById('btnToggleStudentLogin'),
+      studentPanel: document.getElementById('studentLoginPanel'),
+      studentForm: document.getElementById('studentLoginForm'),
+      studentIdInput: document.getElementById('studentIdInput'),
+      studentPasswordInput: document.getElementById('studentPasswordInput'),
+      btnToggleStudentPw: document.getElementById('btnToggleStudentPassword'),
+      btnStudentSubmit: document.getElementById('btnStudentLoginSubmit'),
+      studentSpinner: document.getElementById('studentLoginSpinner'),
+      studentBtnLabel: document.getElementById('studentLoginBtnLabel'),
+      studentErrorBox: document.getElementById('studentLoginErrorMsg'),
+      btnStudentDemoFill: document.getElementById('btnFillDemoStudentCreds'),
+      studentDashboardShell: document.getElementById('studentDashboardShell'),
       sidebarUserRow: document.getElementById('sidebarAuthUserRow'),
       sidebarUserEmail: document.getElementById('sidebarAuthUserEmail'),
       btnSignOut: document.getElementById('btnSidebarSignOut')
@@ -266,6 +283,20 @@
     if (els.btnLabel) els.btnLabel.textContent = isAuthenticating ? 'Authenticating...' : 'Sign In';
     if (els.username) els.username.disabled = isAuthenticating;
     if (els.password) els.password.disabled = isAuthenticating;
+    if (els.btnStudentSubmit) els.btnStudentSubmit.disabled = isAuthenticating;
+    if (els.studentIdInput) els.studentIdInput.disabled = isAuthenticating;
+    if (els.studentPasswordInput) els.studentPasswordInput.disabled = isAuthenticating;
+  }
+
+  function setStudentAuthLoading(loading) {
+    const els = getEls();
+    isAuthenticating = Boolean(loading);
+    if (els.btnStudentSubmit) els.btnStudentSubmit.disabled = isAuthenticating;
+    if (els.studentSpinner) els.studentSpinner.classList.toggle('hidden', !isAuthenticating);
+    if (els.studentBtnLabel) els.studentBtnLabel.textContent = isAuthenticating ? 'Signing in...' : 'Sign in as Student';
+    if (els.studentIdInput) els.studentIdInput.disabled = isAuthenticating;
+    if (els.studentPasswordInput) els.studentPasswordInput.disabled = isAuthenticating;
+    if (els.btnSubmit) els.btnSubmit.disabled = isAuthenticating;
   }
 
   function showLoginError(msg) {
@@ -282,14 +313,38 @@
     els.errorBox.textContent = '';
   }
 
-  function mapSupabaseAuthError(rawMsg) {
+  function showStudentError(msg) {
+    const els = getEls();
+    if (!els.studentErrorBox) return;
+    els.studentErrorBox.textContent = msg;
+    els.studentErrorBox.classList.remove('hidden');
+  }
+
+  function clearStudentError() {
+    const els = getEls();
+    if (!els.studentErrorBox) return;
+    els.studentErrorBox.classList.add('hidden');
+    els.studentErrorBox.textContent = '';
+  }
+
+  function mapStudentIdToInternalEmail(studentIdRaw) {
+    const clean = String(studentIdRaw || '').trim();
+    if (!clean || /@/.test(clean) || !/^[a-zA-Z0-9_-]{3,32}$/.test(clean)) return '';
+    return `${clean.toLowerCase()}@${INTERNAL_STUDENT_DOMAIN}`;
+  }
+
+  function mapSupabaseAuthError(rawMsg, isStudentPortal = false) {
     const s = String(rawMsg || '');
     const low = s.toLowerCase();
     if (low.includes('invalid login credentials') || low.includes('invalid_credentials')) {
-      return 'Incorrect email or password. Please verify your credentials and try again.';
+      return isStudentPortal
+        ? 'Incorrect Student ID or password. Please verify your credentials and try again.'
+        : 'Incorrect email or password. Please verify your credentials and try again.';
     }
     if (low.includes('email not confirmed')) {
-      return 'Account created, but email confirmation is enabled in Supabase. Confirm admin@omnisx.com in Supabase Dashboard -> Authentication -> Users.';
+      return isStudentPortal
+        ? 'Student account created, awaiting email confirmation in Supabase Dashboard -> Authentication -> Users.'
+        : 'Account created, but email confirmation is enabled in Supabase. Confirm admin@omnisx.com in Supabase Dashboard -> Authentication -> Users.';
     }
     if (low.includes('too many requests') || low.includes('rate limit')) {
       return 'Too many login attempts. Please wait a moment and try again.';
@@ -297,14 +352,57 @@
     if (low.includes('network') || low.includes('fetch')) {
       return 'Unable to reach Supabase authentication service. Check your internet connection.';
     }
-    return s || 'Authentication failed. Please try again.';
+    return isStudentPortal ? s.replace(/[a-z0-9._-]+@students\.omnisx\.com/gi, 'your student account') : (s || 'Authentication failed. Please try again.');
   }
 
-  async function enterDashboard(userObj) {
+  async function enterDashboard(userObj, roleInfo = null) {
     const els = getEls();
+    let role = roleInfo && roleInfo.role ? roleInfo.role : null;
+    if (!role && global.OMNIS_DB && typeof global.OMNIS_DB.resolveUserRole === 'function') {
+      const resolved = await global.OMNIS_DB.resolveUserRole();
+      role = resolved ? resolved.role : null;
+    }
+
+    if (role === 'student') {
+      if (global.OMNIS_APP && typeof global.OMNIS_APP.deactivateDashboard === 'function') {
+        global.OMNIS_APP.deactivateDashboard();
+      }
+      if (els.appShell) els.appShell.classList.add('hidden');
+      const ok = global.OMNIS_STUDENT && typeof global.OMNIS_STUDENT.activateStudentDashboard === 'function'
+        ? await global.OMNIS_STUDENT.activateStudentDashboard()
+        : false;
+      if (!ok) {
+        if (global.OMNIS_DB && typeof global.OMNIS_DB.signOutUser === 'function') {
+          await global.OMNIS_DB.signOutUser();
+        }
+        showStudentError('Student profile verification failed. Contact campus administration.');
+        return;
+      }
+      isLoggedIn = true;
+      stopSlideshow();
+      clearLoginError();
+      clearStudentError();
+      if (els.landing) els.landing.classList.add('hidden');
+      return;
+    }
+
+    if (role !== 'admin') {
+      if (global.OMNIS_DB && typeof global.OMNIS_DB.signOutUser === 'function') {
+        await global.OMNIS_DB.signOutUser();
+      }
+      showLoginError('Account lacks an authorized institutional role.');
+      return;
+    }
+
+    if (global.OMNIS_STUDENT && typeof global.OMNIS_STUDENT.deactivateStudentDashboard === 'function') {
+      global.OMNIS_STUDENT.deactivateStudentDashboard();
+    }
+    if (els.studentDashboardShell) els.studentDashboardShell.classList.add('hidden');
+
     isLoggedIn = true;
     stopSlideshow();
     clearLoginError();
+    clearStudentError();
 
     const emailText = userObj && userObj.email ? userObj.email : '';
     if (els.sidebarUserRow && els.sidebarUserEmail) {
@@ -337,22 +435,36 @@
     isLoggedIn = false;
     isPaused = false;
     setAuthLoading(false);
+    setStudentAuthLoading(false);
     clearLoginError();
+    clearStudentError();
 
     if (global.OMNIS_APP && typeof global.OMNIS_APP.deactivateDashboard === 'function') {
       global.OMNIS_APP.deactivateDashboard();
+    }
+    if (global.OMNIS_STUDENT && typeof global.OMNIS_STUDENT.deactivateStudentDashboard === 'function') {
+      global.OMNIS_STUDENT.deactivateStudentDashboard();
     }
     if (els.sidebarUserRow) els.sidebarUserRow.classList.add('hidden');
     if (els.password) {
       els.password.value = '';
       els.password.type = 'password';
     }
+    if (els.studentPasswordInput) {
+      els.studentPasswordInput.value = '';
+      els.studentPasswordInput.type = 'password';
+    }
     if (els.btnTogglePw) {
       els.btnTogglePw.textContent = 'Show';
       els.btnTogglePw.setAttribute('aria-pressed', 'false');
     }
+    if (els.btnToggleStudentPw) {
+      els.btnToggleStudentPw.textContent = 'Show';
+      els.btnToggleStudentPw.setAttribute('aria-pressed', 'false');
+    }
 
     if (els.appShell) els.appShell.classList.add('hidden');
+    if (els.studentDashboardShell) els.studentDashboardShell.classList.add('hidden');
     if (els.landing) els.landing.classList.remove('hidden');
     goToSlide(0);
     startSlideshow();
@@ -371,6 +483,22 @@
       return { ok: false, error: 'Please enter your password.', focusField: 'password' };
     }
     return { ok: true, email, password };
+  }
+
+  function validateStudentInputs(studentIdRaw, passwordRaw) {
+    const sid = String(studentIdRaw || '').trim();
+    const password = String(passwordRaw || '');
+    if (!sid) {
+      return { ok: false, error: 'Please enter your Student ID (e.g. STU001).', focusField: 'studentId' };
+    }
+    const mappedEmail = mapStudentIdToInternalEmail(sid);
+    if (!mappedEmail) {
+      return { ok: false, error: 'Enter a valid Student ID using letters and numbers only (e.g. STU001).', focusField: 'studentId' };
+    }
+    if (!password) {
+      return { ok: false, error: 'Please enter your student password.', focusField: 'studentPassword' };
+    }
+    return { ok: true, studentId: sid.toUpperCase(), internalEmail: mappedEmail, password };
   }
 
   function bindLoginEvents() {
@@ -450,12 +578,90 @@
         setAuthLoading(false);
 
         if (!res || !res.ok) {
-          showLoginError(mapSupabaseAuthError(res && res.error));
+          showLoginError(mapSupabaseAuthError(res && res.error, false));
           if (els.password) els.password.focus();
           return;
         }
 
-        await enterDashboard(res.user);
+        if (res.role !== 'admin') {
+          if (typeof global.OMNIS_DB.signOutUser === 'function') await global.OMNIS_DB.signOutUser();
+          showLoginError('Student accounts must sign in using the Student Portal Login section below.');
+          return;
+        }
+
+        await enterDashboard(res.user, { role: res.role });
+      });
+    }
+
+    if (els.studentAccordionBtn && els.studentPanel) {
+      els.studentAccordionBtn.addEventListener('click', () => {
+        const expanded = els.studentAccordionBtn.getAttribute('aria-expanded') === 'true';
+        const next = !expanded;
+        els.studentAccordionBtn.setAttribute('aria-expanded', String(next));
+        els.studentPanel.classList.toggle('hidden', !next);
+        clearStudentError();
+      });
+    }
+
+    if (els.btnToggleStudentPw && els.studentPasswordInput) {
+      els.btnToggleStudentPw.addEventListener('click', () => {
+        const showing = els.studentPasswordInput.type === 'text';
+        els.studentPasswordInput.type = showing ? 'password' : 'text';
+        els.btnToggleStudentPw.textContent = showing ? 'Show' : 'Hide';
+        els.btnToggleStudentPw.setAttribute('aria-pressed', String(!showing));
+        els.btnToggleStudentPw.setAttribute('aria-label', showing ? 'Show student password' : 'Hide student password');
+      });
+    }
+
+    if (els.btnStudentDemoFill && els.studentIdInput && els.studentPasswordInput) {
+      els.btnStudentDemoFill.addEventListener('click', () => {
+        if (isAuthenticating) return;
+        els.studentIdInput.value = DEMO_STUDENT_CREDENTIALS.studentId;
+        els.studentPasswordInput.value = DEMO_STUDENT_CREDENTIALS.password;
+        clearStudentError();
+        els.studentPasswordInput.focus();
+      });
+    }
+
+    if (els.studentForm) {
+      els.studentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (isAuthenticating) return;
+        clearStudentError();
+
+        const check = validateStudentInputs(
+          els.studentIdInput ? els.studentIdInput.value : '',
+          els.studentPasswordInput ? els.studentPasswordInput.value : ''
+        );
+        if (!check.ok) {
+          showStudentError(check.error);
+          if (check.focusField === 'studentId' && els.studentIdInput) els.studentIdInput.focus();
+          else if (els.studentPasswordInput) els.studentPasswordInput.focus();
+          return;
+        }
+
+        if (!global.OMNIS_DB || typeof global.OMNIS_DB.signInWithPassword !== 'function') {
+          showStudentError('Authentication service is unavailable.');
+          return;
+        }
+
+        setStudentAuthLoading(true);
+        const res = await global.OMNIS_DB.signInWithPassword(check.internalEmail, check.password);
+        setStudentAuthLoading(false);
+
+        if (!res || !res.ok) {
+          showStudentError(mapSupabaseAuthError(res && res.error, true));
+          if (els.studentPasswordInput) els.studentPasswordInput.focus();
+          return;
+        }
+
+        if (res.role !== 'student') {
+          if (typeof global.OMNIS_DB.signOutUser === 'function') await global.OMNIS_DB.signOutUser();
+          showStudentError('Administrator accounts must sign in using the Institutional Email form above.');
+          return;
+        }
+
+        await enterDashboard(res.user, { role: 'student', studentId: res.studentId, profile: res.profile });
       });
     }
 
@@ -474,6 +680,7 @@
 
     // Enforce unauthenticated landing guard on initial render before checking Supabase session
     els.appShell.classList.add('hidden');
+    if (els.studentDashboardShell) els.studentDashboardShell.classList.add('hidden');
     els.landing.classList.remove('hidden');
 
     buildSlideDom();
@@ -486,11 +693,11 @@
       }
     });
 
-    // Verify real Supabase session on load
+    // Verify real Supabase session & role on load
     if (global.OMNIS_DB && typeof global.OMNIS_DB.getAuthSession === 'function') {
       const auth = await global.OMNIS_DB.getAuthSession();
-      if (auth && auth.authenticated && auth.user) {
-        await enterDashboard(auth.user);
+      if (auth && auth.authenticated && auth.user && auth.role && auth.role !== 'unauthorized') {
+        await enterDashboard(auth.user, { role: auth.role, studentId: auth.studentId, profile: auth.profile });
       }
     }
   }
@@ -499,6 +706,7 @@
     SLIDE_INTERVAL_MS,
     SLIDES,
     DEMO_CREDENTIALS,
+    DEMO_STUDENT_CREDENTIALS,
     goToSlide,
     togglePause,
     enterDashboard,

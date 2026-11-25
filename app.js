@@ -596,6 +596,261 @@
     });
   }
 
+  function buildStudentRecoveryPayload(plan, batchId) {
+    if (!plan) return { batchId, scheduleUpdates: [], notifications: [] };
+    const slotMap = new Map((baseState.meta && baseState.meta.slots ? baseState.meta.slots : []).map((s) => [s.id, s]));
+    const roomMap = new Map([
+      ...(baseState.classrooms || []).map((r) => [r.id, r]),
+      ...(baseState.labs || []).map((l) => [l.id, l])
+    ]);
+    const busMap = new Map((baseState.buses || []).map((b) => [b.id, b]));
+    const scheduleMap = new Map();
+    const notifMap = new Map();
+
+    const kindFromType = (t) => {
+      if (t === 'EXAM') return 'examination';
+      if (t === 'PLACEMENT') return 'placement';
+      if (t === 'EVENT') return 'event';
+      return 'timetable';
+    };
+
+    (plan.actions || []).forEach((a) => {
+      if (!a || !a.sectionId || !a.activityId) return;
+      const updateKey = `${a.sectionId}::${a.activityId}`;
+      let changeStatus = 'RESCHEDULED';
+      let titlePrefix = 'Schedule Updated';
+      if (!a.resolved) {
+        changeStatus = 'CANCELLED';
+        titlePrefix = a.activityType === 'EXAM' ? 'Exam Disrupted / Cancelled' : a.activityType === 'PLACEMENT' ? 'Placement Session Unresolved' : a.activityType === 'LAB' ? 'Laboratory Session Cancelled' : 'Class Cancelled';
+      } else if (a.timeChanged) {
+        changeStatus = 'RESCHEDULED';
+        titlePrefix = a.activityType === 'EXAM' ? 'Examination Schedule Updated' : a.activityType === 'PLACEMENT' ? 'Placement Schedule Updated' : a.activityType === 'LAB' ? 'Laboratory Session Rescheduled' : 'Class Rescheduled';
+      } else if (a.roomChanged) {
+        changeStatus = a.activityType === 'LAB' ? 'LAB_CHANGED' : 'CLASSROOM_CHANGED';
+        titlePrefix = a.activityType === 'LAB' ? 'Laboratory Reassigned' : a.activityType === 'EXAM' ? 'Examination Hall Changed' : a.activityType === 'PLACEMENT' ? 'Placement Venue Changed' : 'Classroom Changed';
+      } else if (a.facChanged) {
+        changeStatus = 'FACULTY_CHANGED';
+        titlePrefix = 'Alternative Faculty Assigned';
+      }
+
+      const prevParts = [];
+      const nextParts = [];
+      if (!a.resolved) {
+        prevParts.push(`${a.origDay} ${a.origTimeText || a.origSlotId}`, `${a.origRoomName || a.origRoomId}`, `${a.origFacultyName || a.origFacultyId}`);
+        nextParts.push('Cancelled / Unassigned (constraint blockage)');
+      } else {
+        if (a.roomChanged) {
+          prevParts.push(`Room: ${a.origRoomName || a.origRoomId}`);
+          nextParts.push(`Room: ${a.newRoomName || a.newRoomId}`);
+        }
+        if (a.facChanged) {
+          prevParts.push(`Faculty: ${a.origFacultyName || a.origFacultyId}`);
+          nextParts.push(`Faculty: ${a.newFacultyName || a.newFacultyId}`);
+        }
+        if (a.timeChanged) {
+          prevParts.push(`Time: ${a.origDay} ${a.origTimeText || a.origSlotId}`);
+          nextParts.push(`Time: ${a.newDay} ${a.newTimeText || a.newSlotId}`);
+        }
+        if (prevParts.length === 0) {
+          prevParts.push(`${a.origDay} ${a.origTimeText || a.origSlotId}`);
+          nextParts.push(`${a.newDay} ${a.newTimeText || a.newSlotId}${a.splitSummary ? ` (${a.splitSummary})` : ''}`);
+        }
+      }
+
+      const prevSummary = prevParts.join(' | ');
+      const nextSummary = nextParts.join(' | ');
+      const dateTimeText = !a.resolved
+        ? `${a.occurrenceDateDMY || a.origDay} • ${a.origTimeText || a.origSlotId}`
+        : `${a.newDateDMY || a.newDay} (${a.newDay}) • ${a.newTimeText || a.newSlotId}`;
+
+      scheduleMap.set(updateKey, {
+        client_update_id: `${batchId}::upd::${updateKey}`,
+        batch_id: batchId,
+        section_id: a.sectionId,
+        activity_id: a.activityId,
+        activity_kind: kindFromType(a.activityType),
+        subject_name: a.title,
+        subject_code: a.activityId,
+        change_status: changeStatus,
+        previous_details: {
+          day: a.origDay,
+          date: a.occurrenceDate,
+          slotId: a.origSlotId,
+          timeText: a.origTimeText,
+          facultyId: a.origFacultyId,
+          facultyName: a.origFacultyName,
+          roomId: a.origRoomId,
+          roomName: a.origRoomName
+        },
+        updated_details: {
+          day: a.newDay,
+          date: a.newDate,
+          slotId: a.newSlotId,
+          timeText: a.newTimeText,
+          facultyId: a.newFacultyId,
+          facultyName: a.newFacultyName,
+          roomId: a.newRoomId,
+          roomName: a.newRoomName,
+          splitSummary: a.splitSummary || ''
+        },
+        reason: a.explanation || `Applied recovery plan: ${plan.name}`,
+        plan_rank: plan.rank,
+        plan_name: plan.name,
+        resolved: Boolean(a.resolved)
+      });
+
+      const notifKey = `${a.sectionId}::${a.activityId}::${changeStatus}`;
+      if (!notifMap.has(notifKey)) {
+        notifMap.set(notifKey, {
+          client_notif_id: `${batchId}::ntf::${notifKey}`,
+          batch_id: batchId,
+          section_id: a.sectionId,
+          activity_id: a.activityId,
+          change_status: changeStatus,
+          title: `${titlePrefix}: ${a.title}`,
+          description: !a.resolved
+            ? `Recovery could not resolve ${a.title} without violating institutional constraints.`
+            : `${a.title} has been updated under ${plan.name} (Rank #${plan.rank}).`,
+          previous_summary: prevSummary,
+          updated_summary: nextSummary,
+          affected_date_time: dateTimeText,
+          reason: a.explanation || `Applied recovery plan: ${plan.name}`
+        });
+      }
+    });
+
+    (plan.preemptions || []).forEach((pr) => {
+      if (!pr || !pr.sectionId || !pr.activityId) return;
+      const updateKey = `${pr.sectionId}::${pr.activityId}`;
+      const origRoom = roomMap.get(pr.origRoomId);
+      const newRoom = roomMap.get(pr.newRoomId);
+      const origSlot = slotMap.get(pr.origSlotId);
+      const newSlot = slotMap.get(pr.newSlotId);
+      const timeChanged = pr.origDay !== pr.newDay || pr.origSlotId !== pr.newSlotId;
+      const changeStatus = timeChanged ? 'RESCHEDULED' : 'CLASSROOM_CHANGED';
+      const origTimeText = origSlot ? origSlot.label : pr.origSlotId;
+      const newTimeText = newSlot ? newSlot.label : pr.newSlotId;
+      const reason = `Relocated to free ${pr.origRoomId} for higher-priority ${pr.forActivityId}.`;
+
+      scheduleMap.set(updateKey, {
+        client_update_id: `${batchId}::upd::${updateKey}`,
+        batch_id: batchId,
+        section_id: pr.sectionId,
+        activity_id: pr.activityId,
+        activity_kind: kindFromType(pr.activityType),
+        subject_name: pr.title,
+        subject_code: pr.activityId,
+        change_status: changeStatus,
+        previous_details: {
+          day: pr.origDay,
+          date: pr.origDate,
+          slotId: pr.origSlotId,
+          timeText: origTimeText,
+          roomId: pr.origRoomId,
+          roomName: origRoom ? origRoom.name : pr.origRoomId
+        },
+        updated_details: {
+          day: pr.newDay,
+          date: pr.newDate,
+          slotId: pr.newSlotId,
+          timeText: newTimeText,
+          roomId: pr.newRoomId,
+          roomName: newRoom ? newRoom.name : pr.newRoomId
+        },
+        reason,
+        plan_rank: plan.rank,
+        plan_name: plan.name,
+        resolved: true
+      });
+
+      const notifKey = `${pr.sectionId}::${pr.activityId}::${changeStatus}`;
+      if (!notifMap.has(notifKey)) {
+        notifMap.set(notifKey, {
+          client_notif_id: `${batchId}::ntf::${notifKey}`,
+          batch_id: batchId,
+          section_id: pr.sectionId,
+          activity_id: pr.activityId,
+          change_status: changeStatus,
+          title: `${timeChanged ? 'Class Rescheduled' : 'Classroom Changed'}: ${pr.title}`,
+          description: `${pr.title} was adjusted to accommodate priority campus scheduling.`,
+          previous_summary: `${pr.origDay} ${origTimeText} | Room: ${origRoom ? origRoom.name : pr.origRoomId}`,
+          updated_summary: `${pr.newDay} ${newTimeText} | Room: ${newRoom ? newRoom.name : pr.newRoomId}`,
+          affected_date_time: `${pr.newDate || pr.newDay} (${pr.newDay}) • ${newTimeText}`,
+          reason
+        });
+      }
+    });
+
+    (plan.transitActions || []).forEach((tr) => {
+      if (!tr || !tr.busId) return;
+      const busObj = busMap.get(tr.busId);
+      const linkedSecs = busObj && Array.isArray(busObj.linkedSections) ? busObj.linkedSections : [];
+      const busDate = baseState.meta && baseState.meta.referenceWeek ? baseState.meta.referenceWeek.Mon : 'Current Week';
+      linkedSecs.forEach((secId) => {
+        const updateKey = `${secId}::${tr.busId}`;
+        const incomplete = Number(tr.remainingUnassigned) > 0;
+        scheduleMap.set(updateKey, {
+          client_update_id: `${batchId}::upd::${updateKey}`,
+          batch_id: batchId,
+          section_id: secId,
+          activity_id: tr.busId,
+          activity_kind: 'transport',
+          subject_name: `Transit Reroute (${tr.busId})`,
+          subject_code: tr.busId,
+          change_status: 'TRANSPORT_CHANGED',
+          previous_details: { busId: tr.busId, route: busObj ? busObj.route : tr.busId },
+          updated_details: {
+            busId: tr.busId,
+            reroutedTo: tr.reroutedTo,
+            remainingUnassigned: tr.remainingUnassigned
+          },
+          reason: tr.explanation,
+          plan_rank: plan.rank,
+          plan_name: plan.name,
+          resolved: !incomplete
+        });
+
+        const notifKey = `${secId}::${tr.busId}::TRANSPORT`;
+        notifMap.set(notifKey, {
+          client_notif_id: `${batchId}::ntf::${notifKey}`,
+          batch_id: batchId,
+          section_id: secId,
+          activity_id: tr.busId,
+          change_status: incomplete ? 'INCOMPLETE_RECOVERY' : 'TRANSPORT_CHANGED',
+          title: incomplete ? `Incomplete Transit Recovery (${tr.busId})` : `Your college bus assignment has changed (${tr.busId})`,
+          description: incomplete
+            ? `${tr.reroutedStudents} commuters from ${tr.busId} were reassigned, but ${tr.remainingUnassigned} commuter seat(s) remain unallocated.`
+            : `Commuters assigned to ${tr.busId} (${busObj ? busObj.route : ''}) have been rerouted: ${tr.reroutedTo}.`,
+          previous_summary: `Original Bus: ${tr.busId}${busObj ? ` (${busObj.route})` : ''}`,
+          updated_summary: `Reassigned Shuttles: ${tr.reroutedTo}${incomplete ? ` | Unassigned: ${tr.remainingUnassigned}` : ''}`,
+          affected_date_time: `${busDate} • Morning Commute (09:00–11:00)`,
+          reason: tr.explanation
+        });
+      });
+    });
+
+    return {
+      batchId,
+      runId: appState.activeRunId || null,
+      scheduleUpdates: Array.from(scheduleMap.values()),
+      notifications: Array.from(notifMap.values())
+    };
+  }
+
+  function collectPlanAffectedSections(plan) {
+    if (!plan) return [];
+    const set = new Set();
+    (plan.actions || []).forEach((a) => { if (a && a.sectionId) set.add(a.sectionId); });
+    (plan.preemptions || []).forEach((p) => { if (p && p.sectionId) set.add(p.sectionId); });
+    (plan.transitActions || []).forEach((tr) => {
+      const bus = (baseState.buses || []).find((b) => b.id === tr.busId);
+      if (bus && Array.isArray(bus.linkedSections)) {
+        bus.linkedSections.forEach((secId) => set.add(secId));
+      }
+    });
+    return Array.from(set);
+  }
+
   // ==================== ACTIONS ====================
 
   function hasActiveDisruption() {
@@ -759,6 +1014,24 @@
       `Applied Rank #${plan.rank} "${plan.name}": ${plan.stats.resolvedCount}/${plan.stats.totalImpacted} impacted occurrences recovered (${plan.stats.recoveryPct}%), affected students reduced from ${plan.stats.affectedStudentsBefore} to ${plan.stats.affectedStudentsAfter}.`,
       'success'
     );
+
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.publishAdminRecoveryToStudents === 'function') {
+      const batchId = window.OMNIS_DB.generateUUID();
+      const studentPayload = buildStudentRecoveryPayload(plan, batchId);
+      window.OMNIS_DB.publishAdminRecoveryToStudents(studentPayload).then((pubRes) => {
+        if (!pubRes || !pubRes.ok) {
+          showBanner(
+            `Applied locally, but Supabase student communication sync failed: ${(pubRes && pubRes.error) || 'Unknown error'}.`,
+            'danger'
+          );
+        } else if (pubRes.notificationsCount > 0) {
+          showBanner(
+            `Applied Rank #${plan.rank} "${plan.name}": ${plan.stats.resolvedCount}/${plan.stats.totalImpacted} recovered (${plan.stats.recoveryPct}%) & ${pubRes.notificationsCount} student notification(s) published to Supabase.`,
+            'success'
+          );
+        }
+      });
+    }
   }
 
   function undoRecovery() {
@@ -769,10 +1042,30 @@
     persistRecoveryEvent('undone', prevPlan);
     renderAll();
     showBanner('Recovery undone. Campus reverted to disrupted pre-recovery state for further comparison.', 'info');
+
+    if (window.OMNIS_DB && typeof window.OMNIS_DB.revertAdminRecoveryForStudents === 'function') {
+      window.OMNIS_DB.revertAdminRecoveryForStudents({
+        eventType: 'undone',
+        runId: appState.activeRunId || null,
+        affectedSections: collectPlanAffectedSections(prevPlan),
+        reason: `Administrator undid Rank #${prevPlan ? prevPlan.rank : ''} (${prevPlan ? prevPlan.name : 'recovery plan'})`
+      }).then((revRes) => {
+        if (!revRes || !revRes.ok) {
+          showBanner(
+            `Recovery undone locally, but reverting student portal updates failed: ${(revRes && revRes.error) || 'Database error'}.`,
+            'danger'
+          );
+        }
+      });
+    }
   }
 
   function resetSimulation() {
     const prevQueueIds = appState.queuedFailureConfigs.map((x) => x._qid).filter(Boolean);
+    const wasRecoveryApplied = Boolean(appState.recoveryApplied);
+    const prevAppliedPlan = wasRecoveryApplied ? getAppliedPlan() : null;
+    const prevRunId = appState.activeRunId || null;
+
     appState.activeScenarioId = null;
     appState.activeRunId = null;
     appState.activeFailureConfigs = [];
@@ -788,6 +1081,22 @@
     recomputeSimulation();
     hideBanner();
     renderAll();
+
+    if (wasRecoveryApplied && window.OMNIS_DB && typeof window.OMNIS_DB.revertAdminRecoveryForStudents === 'function') {
+      window.OMNIS_DB.revertAdminRecoveryForStudents({
+        eventType: 'reset',
+        runId: prevRunId,
+        affectedSections: collectPlanAffectedSections(prevAppliedPlan),
+        reason: 'Campus simulation reset to baseline operational schedule'
+      }).then((revRes) => {
+        if (!revRes || !revRes.ok) {
+          showBanner(
+            `Simulation reset locally, but restoring student portal schedule failed: ${(revRes && revRes.error) || 'Database error'}.`,
+            'danger'
+          );
+        }
+      });
+    }
   }
 
   function switchView(viewName) {
@@ -4777,14 +5086,16 @@
       appEventsBound = true;
     }
 
-    // Strict Supabase auth session guard: never expose or hydrate dashboard without authenticated user
+    // Strict Supabase auth + Admin role guard: never expose or hydrate Admin dashboard for students or unauthenticated users
     if (window.OMNIS_DB && typeof window.OMNIS_DB.getAuthSession === 'function') {
       const auth = await window.OMNIS_DB.getAuthSession();
-      if (!auth || !auth.authenticated) {
+      if (!auth || !auth.authenticated || (auth.role && auth.role !== 'admin')) {
         const appEl = document.getElementById('appShell');
         const loginEl = document.getElementById('loginLandingPage');
         if (appEl) appEl.classList.add('hidden');
-        if (loginEl) loginEl.classList.remove('hidden');
+        if (!auth || !auth.authenticated) {
+          if (loginEl) loginEl.classList.remove('hidden');
+        }
         return false;
       }
     }

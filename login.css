@@ -402,7 +402,11 @@
 #loginLandingPage .glass-login-card {
   width: 100%;
   max-width: 420px;
-  padding: 30px 28px;
+  max-height: calc(100vh - 44px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(253, 230, 138, 0.35) transparent;
+  padding: 26px 26px;
   border-radius: 22px;
   background: rgba(16, 26, 46, 0.86);
   backdrop-filter: blur(18px);
@@ -411,7 +415,18 @@
   box-shadow: 0 20px 50px rgba(8, 15, 29, 0.55);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 15px;
+}
+
+#loginLandingPage .glass-login-card::-webkit-scrollbar {
+  width: 6px;
+}
+#loginLandingPage .glass-login-card::-webkit-scrollbar-track {
+  background: transparent;
+}
+#loginLandingPage .glass-login-card::-webkit-scrollbar-thumb {
+  background: rgba(253, 230, 138, 0.35);
+  border-radius: 999px;
 }
 
 #loginLandingPage .card-logo-row {
@@ -656,6 +671,62 @@
 #loginLandingPage .demo-fill-btn:hover {
   background: rgba(253, 230, 138, 0.2);
   border-color: rgba(253, 230, 138, 0.65);
+}
+
+/* Expandable Student Portal Login Accordion */
+#loginLandingPage .student-login-accordion {
+  border-top: 1px solid rgba(51, 65, 85, 0.78);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#loginLandingPage .student-accordion-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 13px;
+  border-radius: 11px;
+  border: 1px solid var(--login-border);
+  background: rgba(30, 41, 59, 0.78);
+  color: var(--login-white);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+#loginLandingPage .student-accordion-toggle:hover,
+#loginLandingPage .student-accordion-toggle[aria-expanded="true"] {
+  background: rgba(30, 41, 59, 0.96);
+  border-color: rgba(253, 230, 138, 0.55);
+  color: var(--login-yellow);
+}
+
+#loginLandingPage .student-accordion-chevron {
+  font-size: 13px;
+  transition: transform 0.2s ease;
+}
+
+#loginLandingPage .student-accordion-toggle[aria-expanded="true"] .student-accordion-chevron {
+  transform: rotate(180deg);
+}
+
+#loginLandingPage .student-login-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 13px;
+  border-radius: 13px;
+  background: rgba(8, 15, 29, 0.6);
+  border: 1px solid rgba(51, 65, 85, 0.9);
+}
+
+#loginLandingPage .student-login-panel.hidden {
+  display: none;
 }
 
 .sidebar-user-row {

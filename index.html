@@ -7,6 +7,7 @@
   <title>OMNIS-X — JGIT Campus Digital Twin</title>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="login.css">
+  <link rel="stylesheet" href="student.css">
 </head>
 
 <body>
@@ -172,6 +173,85 @@
               </div>
             </div>
             <button type="button" class="demo-fill-btn" id="btnFillDemoCreds">Use Demo Credentials</button>
+          </div>
+
+          <div class="student-login-accordion" id="studentLoginAccordion">
+            <button
+              type="button"
+              class="student-accordion-toggle"
+              id="btnToggleStudentLogin"
+              aria-expanded="false"
+              aria-controls="studentLoginPanel"
+            >
+              <span>Student Portal Login</span>
+              <span class="student-accordion-chevron" aria-hidden="true">&#9662;</span>
+            </button>
+
+            <div class="student-login-panel hidden" id="studentLoginPanel">
+              <form class="login-form" id="studentLoginForm" novalidate>
+                <div class="login-field">
+                  <label for="studentIdInput">Student ID</label>
+                  <div class="login-input-wrap">
+                    <input
+                      type="text"
+                      id="studentIdInput"
+                      name="studentId"
+                      class="login-input"
+                      placeholder="STU001"
+                      autocomplete="username"
+                      required
+                    >
+                  </div>
+                </div>
+
+                <div class="login-field">
+                  <label for="studentPasswordInput">Password</label>
+                  <div class="login-input-wrap">
+                    <input
+                      type="password"
+                      id="studentPasswordInput"
+                      name="studentPassword"
+                      class="login-input has-toggle"
+                      placeholder="Enter your password"
+                      autocomplete="current-password"
+                      required
+                    >
+                    <button
+                      type="button"
+                      class="pw-toggle-btn"
+                      id="btnToggleStudentPassword"
+                      aria-label="Show student password"
+                      aria-pressed="false"
+                    >Show</button>
+                  </div>
+                </div>
+
+                <div class="login-error-msg hidden" id="studentLoginErrorMsg" role="alert"></div>
+
+                <button type="submit" class="btn-login-submit" id="btnStudentLoginSubmit">
+                  <span class="btn-login-spinner hidden" id="studentLoginSpinner" aria-hidden="true"></span>
+                  <span id="studentLoginBtnLabel">Sign in as Student</span>
+                </button>
+              </form>
+
+              <div class="demo-access-card" id="demoStudentAccessSection" aria-label="Demo Student Access Credentials">
+                <div class="demo-access-head">
+                  <span class="demo-access-title">Demo Student Access</span>
+                  <span class="demo-access-badge">Student Portal</span>
+                </div>
+                <div class="demo-creds-rows">
+                  <div class="demo-cred-row">
+                    <span>Student ID</span>
+                    <code>STU001</code>
+                  </div>
+                  <div class="demo-cred-row">
+                    <span>Password</span>
+                    <code>Student@2026</code>
+                  </div>
+                </div>
+                <button type="button" class="demo-fill-btn" id="btnFillDemoStudentCreds">Use Demo Credentials</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -796,12 +876,120 @@
     </div>
   </div>
 
+  <!-- OMNIS-X x JGIT Isolated Student Portal Dashboard -->
+  <section id="studentDashboardShell" class="student-shell hidden" aria-label="OMNIS-X Student Dashboard">
+    <aside class="st-sidebar">
+      <div class="st-brand">
+        <div class="st-brand-mark" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+            <path d="M12 3v4M12 17v4M3 12h4M17 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+            <circle cx="12" cy="12" r="3" fill="currentColor" />
+          </svg>
+        </div>
+        <div>
+          <div class="st-brand-title">OMNIS-X &times; JGIT</div>
+          <div class="st-brand-sub">Student Portal</div>
+        </div>
+      </div>
+
+      <div class="st-profile-card" aria-label="Student Profile">
+        <div class="st-profile-head">
+          <div class="st-avatar" id="stAvatar">AS</div>
+          <div>
+            <div class="st-profile-name" id="stProfileName">&mdash;</div>
+            <div class="st-profile-id" id="stProfileId">&mdash;</div>
+          </div>
+        </div>
+        <div class="st-profile-meta">
+          <div class="st-meta-row"><span>Department</span><strong id="stProfileDept">&mdash;</strong></div>
+          <div class="st-meta-row"><span>Semester</span><strong id="stProfileSem">&mdash;</strong></div>
+          <div class="st-meta-row"><span>Section</span><strong id="stProfileSec">&mdash;</strong></div>
+          <div class="st-meta-row"><span>Transit Bus</span><strong id="stProfileBus">&mdash;</strong></div>
+          <div class="st-meta-row"><span>Hostel</span><strong id="stProfileHostel">&mdash;</strong></div>
+        </div>
+      </div>
+
+      <div class="st-sidebar-footer">
+        <div class="st-sync-badge" id="stSyncBadge">
+          <span class="st-sync-dot fallback" id="stSyncDot"></span>
+          <span id="stSyncLabel">Connecting...</span>
+        </div>
+        <button type="button" class="st-logout-btn" id="btnStudentSignOut">Logout</button>
+      </div>
+    </aside>
+
+    <div class="st-main">
+      <header class="st-topbar">
+        <div>
+          <h1 class="st-topbar-title" id="stWelcomeTitle">Student Academic Schedule</h1>
+          <p class="st-topbar-sub">Jain Institute of Technology, Davangere &mdash; Verified Institutional Timetable &amp; Recovery Communication</p>
+        </div>
+        <div class="st-topbar-actions">
+          <button type="button" class="st-refresh-btn" id="btnStRefresh">Sync Updates</button>
+        </div>
+      </header>
+
+      <div class="st-content">
+        <div class="st-status-banner tone-ok" id="stStatusBanner">Your academic schedule is operating normally. No active disruptions.</div>
+
+        <section class="st-kpi-grid" aria-label="Student Schedule Summary">
+          <div class="st-kpi-card">
+            <div class="st-kpi-label">Today&rsquo;s Classes</div>
+            <div class="st-kpi-value" id="stKpiTodays">0</div>
+            <div class="st-kpi-foot" id="stKpiTodaysFoot">Loading institutional schedule...</div>
+          </div>
+          <div class="st-kpi-card is-accent">
+            <div class="st-kpi-label">Rescheduled Classes</div>
+            <div class="st-kpi-value" id="stKpiResched">0</div>
+            <div class="st-kpi-foot">Active faculty, room, lab or slot adjustments</div>
+          </div>
+          <div class="st-kpi-card is-danger">
+            <div class="st-kpi-label">Cancelled Classes</div>
+            <div class="st-kpi-value" id="stKpiCancelled">0</div>
+            <div class="st-kpi-foot">Unresolved constraint-blocked sessions</div>
+          </div>
+        </section>
+
+        <div class="st-workspace-grid">
+          <section class="st-panel" aria-label="Updated Timetable">
+            <div class="st-panel-head">
+              <div>
+                <h2 class="st-panel-title">Updated Timetable</h2>
+                <p class="st-panel-sub">Baseline schedule merged live with verified administrator recovery plans</p>
+              </div>
+              <div class="st-pill-tabs">
+                <button type="button" class="st-tab-btn active" id="btnStViewDaily">Daily</button>
+                <button type="button" class="st-tab-btn" id="btnStViewWeekly">Weekly</button>
+              </div>
+            </div>
+
+            <div class="st-pill-tabs" id="stDayTabs"></div>
+            <div id="stTimetableWrap"></div>
+          </section>
+
+          <section class="st-panel" aria-label="Student Notifications">
+            <div class="st-panel-head">
+              <div>
+                <h2 class="st-panel-title">Recovery Notifications</h2>
+                <p class="st-panel-sub">Targeted schedule &amp; transit advisories for your section</p>
+              </div>
+              <span class="st-status-pill status-unchanged" id="stNotifCount">0 Active</span>
+            </div>
+            <div id="stNotificationsWrap"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
   <script src="config.js"></script>
   <script src="data.js"></script>
   <script src="engine.js"></script>
   <script src="readiness.js"></script>
   <script src="db.js"></script>
+  <script src="student.js"></script>
   <script src="app.js"></script>
   <script src="login.js"></script>
 </body>
