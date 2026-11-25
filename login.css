@@ -42,7 +42,7 @@
   display: flex;
   width: 100%;
   height: 100%;
-  transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: transform 900ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
 }
 
@@ -66,7 +66,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  filter: blur(26px) brightness(0.32) saturate(1.1);
+  filter: blur(24px) brightness(0.54) saturate(1.12);
   transform: scale(1.12);
   pointer-events: none;
 }
@@ -77,6 +77,7 @@
   width: 100%;
   height: 100%;
   display: block;
+  filter: brightness(1.08) contrast(1.03);
   pointer-events: none;
 }
 
@@ -95,17 +96,17 @@
   object-fit: contain;
   object-position: center center;
   padding: 28px 37% 28px 4%;
-  background: radial-gradient(circle at 36% 50%, rgba(16, 26, 46, 0.45), rgba(8, 15, 29, 0.88));
+  background: radial-gradient(circle at 36% 50%, rgba(16, 26, 46, 0.25), rgba(8, 15, 29, 0.62));
 }
 
-/* Multi-stop dark cinematic gradient overlay for high contrast readability */
+/* Balanced gradient overlay: brighter campus visuals with crisp left-side text readability */
 #loginLandingPage .login-bg-overlay {
   position: fixed;
   inset: 0;
   z-index: 1;
   background:
-    linear-gradient(105deg, rgba(8, 15, 29, 0.92) 0%, rgba(8, 15, 29, 0.68) 46%, rgba(8, 15, 29, 0.84) 100%),
-    linear-gradient(180deg, rgba(8, 15, 29, 0.55) 0%, rgba(8, 15, 29, 0.18) 45%, rgba(8, 15, 29, 0.86) 100%);
+    linear-gradient(105deg, rgba(8, 15, 29, 0.84) 0%, rgba(8, 15, 29, 0.34) 48%, rgba(8, 15, 29, 0.56) 100%),
+    linear-gradient(180deg, rgba(8, 15, 29, 0.38) 0%, rgba(8, 15, 29, 0.08) 45%, rgba(8, 15, 29, 0.66) 100%);
   pointer-events: none;
 }
 
@@ -229,19 +230,21 @@
   letter-spacing: -0.03em;
   color: var(--login-white);
   text-transform: uppercase;
+  text-shadow: 0 2px 18px rgba(8, 15, 29, 0.7);
   transform: translateY(0);
   opacity: 1;
-  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1), opacity 250ms ease;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), opacity 280ms ease;
 }
 
 #loginLandingPage .slide-desc {
   margin: 0;
   font-size: clamp(14.5px, 1.3vw, 17px);
   line-height: 1.55;
-  color: var(--login-muted);
+  color: var(--login-white);
+  text-shadow: 0 1px 12px rgba(8, 15, 29, 0.72);
   max-width: 56ch;
-  opacity: 1;
-  transition: opacity 250ms ease, transform 250ms ease;
+  opacity: 0.92;
+  transition: opacity 280ms ease, transform 280ms ease;
 }
 
 #loginLandingPage .slide-copy-stage.is-leaving .slide-kicker,
@@ -276,16 +279,7 @@
 }
 
 #loginLandingPage .slideshow-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: rgba(16, 26, 46, 0.72);
-  border: 1px solid var(--login-border);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  display: none !important;
 }
 
 #loginLandingPage .slide-counter {
@@ -444,6 +438,13 @@
 #loginLandingPage .card-sub {
   margin: 2px 0 0;
   font-size: 12.5px;
+  color: var(--login-muted);
+}
+
+#loginLandingPage .one-click-summary {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
   color: var(--login-muted);
 }
 

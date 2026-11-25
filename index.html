@@ -38,7 +38,7 @@
         </div>
 
         <footer class="login-hero-footer">
-          <div class="slideshow-controls" role="region" aria-label="Slideshow controls">
+          <div class="slideshow-controls" hidden aria-hidden="true">
             <span class="slide-counter" id="slideCounter">01 / 04</span>
             <div class="slide-indicators" id="slideIndicators"></div>
             <div class="slide-ctrl-btns">
@@ -89,31 +89,13 @@
             </div>
           </div>
 
+          <p class="one-click-summary">
+            Access JGIT&rsquo;s live campus digital twin, disruption cascade simulator, constraint-based recovery plans, and zero-failure readiness audit.
+          </p>
+
           <form class="login-form" id="loginForm" novalidate>
-            <div class="login-field">
-              <label for="loginUsername">Institutional Username or Email</label>
-              <div class="login-input-wrap">
-                <input type="text" id="loginUsername" class="login-input" placeholder="admin@jgit.edu.in" autocomplete="username" required>
-              </div>
-            </div>
-
-            <div class="login-field">
-              <label for="loginPassword">Password</label>
-              <div class="login-input-wrap">
-                <input type="password" id="loginPassword" class="login-input has-toggle" placeholder="Enter password" autocomplete="current-password" required>
-                <button type="button" class="pw-toggle-btn" id="btnTogglePassword" aria-pressed="false" aria-label="Show password">Show</button>
-              </div>
-            </div>
-
-            <div class="login-error-msg hidden" id="loginErrorMsg" role="alert"></div>
-
             <button type="submit" class="btn-login-submit" id="btnLoginSubmit">Sign In</button>
           </form>
-
-          <div class="demo-creds-bar">
-            <span>Portal Access: <strong>admin@jgit.edu.in</strong> / <strong>omnisx</strong></span>
-            <button type="button" class="demo-fill-btn" id="btnFillDemoCreds">Fill Demo</button>
-          </div>
         </div>
       </div>
     </div>

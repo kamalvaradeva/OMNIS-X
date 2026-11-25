@@ -6,9 +6,9 @@
 (function (global) {
   'use strict';
 
-  const SLIDE_INTERVAL_MS = 1000;
-  const SLIDE_TRANSITION_MS = 600;
-  const TEXT_SWAP_MS = 220;
+  const SLIDE_INTERVAL_MS = 3000;
+  const SLIDE_TRANSITION_MS = 900;
+  const TEXT_SWAP_MS = 260;
   const AUTH_STORAGE_KEY = 'omnisx_authenticated_user';
 
   const VALID_CREDENTIALS = [
@@ -356,13 +356,8 @@
     if (els.form) {
       els.form.addEventListener('submit', (e) => {
         e.preventDefault();
-        const res = validateAndAuthenticate(els.username?.value, els.password?.value);
-        if (!res.ok) {
-          showLoginError(res.error);
-          return;
-        }
         if (els.errorBox) els.errorBox.classList.add('hidden');
-        enterDashboard(res.account.user);
+        enterDashboard('JGIT Institutional Portal');
       });
     }
 
