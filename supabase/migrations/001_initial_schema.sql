@@ -348,3 +348,26 @@ begin
     );
   end loop;
 end $$;
+
+-- ============================================================================
+-- EXPLICIT POSTGRES ROLE PRIVILEGES (Strict authenticated-only, RLS-enforced)
+-- ============================================================================
+grant usage on schema public to authenticated;
+
+grant select, insert, update, delete on
+  public.sim_sessions,
+  public.failure_queue,
+  public.simulation_runs,
+  public.recovery_events,
+  public.readiness_audits,
+  public.notifications,
+  public.app_log
+to authenticated;
+
+grant select on
+  public.ref_faculty,
+  public.ref_classrooms,
+  public.ref_labs,
+  public.ref_buses,
+  public.ref_hostels
+to authenticated;

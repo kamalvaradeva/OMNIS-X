@@ -846,6 +846,7 @@
     const s = String(rawErr || '');
     if (!s) return 'Ready';
     if (s.includes('Anonymous sign-ins are disabled')) return 'Supabase project requires Anonymous Sign-Ins enabled';
+    if (s.includes('permission denied')) return 'Missing SQL GRANT privileges for authenticated role on Supabase tables';
     if (s.includes('placeholder') || s.includes('not present')) return 'Local-only mode (no Supabase project configured)';
     if (s.includes('offline')) return 'Offline — changes queued locally and will sync automatically';
     return 'Temporary connection issue — changes safely queued locally';
