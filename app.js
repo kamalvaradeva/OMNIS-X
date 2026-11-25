@@ -767,6 +767,9 @@
   }
 
   function switchView(viewName) {
+    if (viewName !== 'overview') {
+      closeLauncherDrawer();
+    }
     appState.activeView = viewName;
     document.querySelectorAll('.nav-item').forEach((btn) => {
       btn.classList.toggle('active', btn.dataset.view === viewName);
@@ -1058,8 +1061,8 @@
       </div>
     `).join('');
 
-    // Compact SVG Graph
-    renderPropagationSVG(document.getElementById('overviewSvgWrap'), { compact: true });
+    // Expanded Overview SVG Graph
+    renderPropagationSVG(document.getElementById('overviewSvgWrap'), { compact: true, expandedOverview: true });
 
     // Quick Scenario Buttons
     document.getElementById('overviewQuickScenarios').innerHTML = baseState.scenarios.map((sc) => `
@@ -1139,6 +1142,7 @@
 
   function renderPropagationSVG(container, opts = {}) {
     const compact = Boolean(opts.compact);
+    const expandedOverview = Boolean(opts.expandedOverview);
     const { graph, failedIds, impactedActivities } = appState.cascadeResult;
     const deptFilter = compact ? 'ALL' : appState.twinDeptFilter;
     const focusMode = compact ? 'IMPACTED_OR_SAMPLE' : appState.twinFocusFilter;
@@ -1213,8 +1217,8 @@
       }
     });
 
-    // Cap per-tier display in compact overview mode so layout never overflows
-    const maxPerTier = compact ? 5 : 14;
+    // Cap per-tier display so layout stays crisp and legible
+    const maxPerTier = expandedOverview ? 6 : compact ? 5 : 14;
     tiers.forEach((t) => {
       // Prioritize failed/affected/recovered nodes first
       t.items.sort((a, b) => {
@@ -1232,16 +1236,16 @@
       }
     });
 
-    const nodeWidth = compact ? 116 : 142;
-    const nodeHeight = compact ? 36 : 42;
-    const colGap = compact ? 42 : 68;
-    const rowGap = compact ? 12 : 14;
+    const nodeWidth = expandedOverview ? 148 : compact ? 116 : 142;
+    const nodeHeight = expandedOverview ? 40 : compact ? 36 : 42;
+    const colGap = expandedOverview ? 54 : compact ? 42 : 68;
+    const rowGap = expandedOverview ? 13 : compact ? 12 : 14;
     const padX = 24;
-    const padY = 38;
+    const padY = expandedOverview ? 40 : 38;
 
     const maxRows = Math.max(1, ...tiers.map((t) => t.items.length));
     const svgWidth = padX * 2 + tiers.length * nodeWidth + (tiers.length - 1) * colGap;
-    const svgHeight = Math.max(compact ? 290 : 460, padY + maxRows * (nodeHeight + rowGap) + 26);
+    const svgHeight = Math.max(expandedOverview ? 350 : compact ? 290 : 460, padY + maxRows * (nodeHeight + rowGap) + 26);
 
     const posMap = new Map();
     tiers.forEach((tier, colIdx) => {
@@ -1320,7 +1324,8 @@
       const colors = STATUS_COLORS[st] || STATUS_COLORS.operational;
       const isSelected = appState.selectedNodeId === node.id;
       const shortLabel = node.label.replace(`${node.id} `, '').replace(/[()]/g, '');
-      const trunc = shortLabel.length > 17 ? shortLabel.slice(0, 16) + '…' : shortLabel;
+      const maxLabelChars = nodeWidth >= 140 ? 21 : 17;
+      const trunc = shortLabel.length > maxLabelChars ? shortLabel.slice(0, maxLabelChars - 1) + '…' : shortLabel;
 
       nodesSvg += `
         <g class="graph-node" data-node-id="${escapeHtml(node.id)}" transform="translate(${x}, ${y})">
@@ -3583,7 +3588,151 @@
     }
   }
 
+  // ==================== OVERVIEW FLOATING DRAWER CONTROLLER ====================
+
+  const overviewDrawerState = {
+    isOpen: false,
+    isPinned: false,
+    hoverToggle: false,
+    hoverDrawer: false,
+    closeTimer: null
+  };
+
+  function isOverviewTouchMode() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(hover: none), (pointer: coarse)').matches;
+  }
+
+  function syncOverviewDrawerDom() {
+    const toggle = document.getElementById('overviewLauncherToggle');
+    const drawer = document.getElementById('overviewLauncherDrawer');
+    const backdrop = document.getElementById('overviewDrawerBackdrop');
+    const pinBadge = document.getElementById('launcherPinBadge');
+    const hint = document.getElementById('launcherHintText');
+    if (!toggle || !drawer) return;
+
+    const open = overviewDrawerState.isOpen;
+    const pinned = overviewDrawerState.isPinned;
+
+    drawer.classList.toggle('is-open', open);
+    drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+
+    toggle.classList.toggle('is-open', open);
+    toggle.classList.toggle('is-pinned', pinned);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    toggle.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+
+    if (pinBadge) pinBadge.classList.toggle('hidden', !pinned);
+    if (hint) {
+      if (isOverviewTouchMode()) {
+        hint.textContent = 'Tap outside or × to close';
+      } else {
+        hint.textContent = pinned ? 'Pinned open • Click tab or Esc to close' : 'Click tab to pin • Esc to close';
+      }
+    }
+
+    if (backdrop) {
+      const showBackdrop = open && (isOverviewTouchMode() || window.innerWidth <= 768);
+      backdrop.classList.toggle('is-visible', showBackdrop);
+      backdrop.setAttribute('aria-hidden', showBackdrop ? 'false' : 'true');
+    }
+  }
+
+  function cancelLauncherClose() {
+    if (overviewDrawerState.closeTimer) {
+      clearTimeout(overviewDrawerState.closeTimer);
+      overviewDrawerState.closeTimer = null;
+    }
+  }
+
+  function openLauncherDrawer(pin = false) {
+    if (appState.activeView !== 'overview') return;
+    cancelLauncherClose();
+    overviewDrawerState.isOpen = true;
+    if (pin) overviewDrawerState.isPinned = true;
+    syncOverviewDrawerDom();
+  }
+
+  function closeLauncherDrawer() {
+    cancelLauncherClose();
+    overviewDrawerState.isOpen = false;
+    overviewDrawerState.isPinned = false;
+    overviewDrawerState.hoverToggle = false;
+    overviewDrawerState.hoverDrawer = false;
+    syncOverviewDrawerDom();
+  }
+
+  function scheduleLauncherClose(delayMs = 400) {
+    cancelLauncherClose();
+    if (overviewDrawerState.isPinned || overviewDrawerState.hoverToggle || overviewDrawerState.hoverDrawer) return;
+    overviewDrawerState.closeTimer = setTimeout(() => {
+      overviewDrawerState.closeTimer = null;
+      if (!overviewDrawerState.isPinned && !overviewDrawerState.hoverToggle && !overviewDrawerState.hoverDrawer) {
+        overviewDrawerState.isOpen = false;
+        syncOverviewDrawerDom();
+      }
+    }, delayMs);
+  }
+
+  function bindOverviewLauncherDrawer() {
+    const toggle = document.getElementById('overviewLauncherToggle');
+    const drawer = document.getElementById('overviewLauncherDrawer');
+    const closeBtn = document.getElementById('btnCloseLauncherDrawer');
+    const backdrop = document.getElementById('overviewDrawerBackdrop');
+    if (!toggle || !drawer || toggle.dataset.drawerBound === '1') return;
+    toggle.dataset.drawerBound = '1';
+
+    toggle.addEventListener('mouseenter', () => {
+      if (isOverviewTouchMode()) return;
+      overviewDrawerState.hoverToggle = true;
+      openLauncherDrawer(false);
+    });
+
+    toggle.addEventListener('mouseleave', () => {
+      if (isOverviewTouchMode()) return;
+      overviewDrawerState.hoverToggle = false;
+      scheduleLauncherClose(400);
+    });
+
+    toggle.addEventListener('click', () => {
+      if (isOverviewTouchMode()) {
+        if (overviewDrawerState.isOpen) closeLauncherDrawer();
+        else openLauncherDrawer(true);
+        return;
+      }
+      if (overviewDrawerState.isPinned) {
+        closeLauncherDrawer();
+      } else {
+        openLauncherDrawer(true);
+      }
+    });
+
+    drawer.addEventListener('mouseenter', () => {
+      if (isOverviewTouchMode()) return;
+      overviewDrawerState.hoverDrawer = true;
+      cancelLauncherClose();
+      if (!overviewDrawerState.isOpen) openLauncherDrawer(false);
+    });
+
+    drawer.addEventListener('mouseleave', () => {
+      if (isOverviewTouchMode()) return;
+      overviewDrawerState.hoverDrawer = false;
+      scheduleLauncherClose(400);
+    });
+
+    if (closeBtn) closeBtn.addEventListener('click', closeLauncherDrawer);
+    if (backdrop) backdrop.addEventListener('click', closeLauncherDrawer);
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && appState.activeView === 'overview' && overviewDrawerState.isOpen) {
+        closeLauncherDrawer();
+      }
+    });
+
+    syncOverviewDrawerDom();
+  }
+
   function bindEvents() {
+    bindOverviewLauncherDrawer();
     // Sidebar navigation
     document.querySelectorAll('.nav-item').forEach((btn) => {
       btn.addEventListener('click', () => switchView(btn.dataset.view));
@@ -3593,13 +3742,16 @@
     document.addEventListener('click', (e) => {
       const gotoBtn = e.target.closest('[data-goto]');
       if (gotoBtn) {
+        if (gotoBtn.closest('#overviewLauncherDrawer')) closeLauncherDrawer();
         switchView(gotoBtn.dataset.goto);
         return;
       }
 
       const scBtn = e.target.closest('[data-scenario]');
       if (scBtn) {
+        const fromOverviewDrawer = Boolean(scBtn.closest('#overviewLauncherDrawer'));
         triggerScenario(scBtn.dataset.scenario);
+        if (fromOverviewDrawer) closeLauncherDrawer();
         return;
       }
 

@@ -212,35 +212,75 @@
         <section class="view active" id="view-overview">
           <div class="kpi-grid" id="overviewKpiGrid"></div>
 
-          <div class="grid-two-col">
-            <div class="card">
-              <div class="card-header">
-                <div>
-                  <h2>Live Failure Propagation Overview</h2>
-                  <p class="card-sub">Dependency cascade across infrastructure, resources, activities &amp; student sections</p>
-                </div>
-                <button class="btn btn-sm btn-outline" data-goto="twin">Open Full Twin</button>
+          <div class="card overview-graph-card">
+            <div class="card-header">
+              <div>
+                <h2>Live Failure Propagation Overview</h2>
+                <p class="card-sub">Dependency cascade across infrastructure, resources, activities &amp; student sections</p>
               </div>
-              <div class="legend-row">
-                <span class="legend-item"><i class="dot dot-green"></i>Operational</span>
-                <span class="legend-item"><i class="dot dot-red"></i>Failed</span>
-                <span class="legend-item"><i class="dot dot-orange"></i>Indirectly Affected</span>
-                <span class="legend-item"><i class="dot dot-blue"></i>Recovered</span>
-              </div>
-              <div class="svg-wrapper compact" id="overviewSvgWrap"></div>
+              <button class="btn btn-sm btn-outline" data-goto="twin">Open Full Twin</button>
             </div>
+            <div class="legend-row">
+              <span class="legend-item"><i class="dot dot-green"></i>Operational</span>
+              <span class="legend-item"><i class="dot dot-red"></i>Failed</span>
+              <span class="legend-item"><i class="dot dot-orange"></i>Indirectly Affected</span>
+              <span class="legend-item"><i class="dot dot-blue"></i>Recovered</span>
+            </div>
+            <div class="svg-wrapper overview-svg-wrap" id="overviewSvgWrap"></div>
+          </div>
 
-            <div class="card">
-              <div class="card-header">
-                <div>
+          <!-- Hover-Activated Floating Quick Disruption Drawer (Overview Only) -->
+          <div class="overview-drawer-backdrop" id="overviewDrawerBackdrop" aria-hidden="true"></div>
+          <button
+            type="button"
+            class="overview-launcher-toggle"
+            id="overviewLauncherToggle"
+            aria-controls="overviewLauncherDrawer"
+            aria-expanded="false"
+            aria-pressed="false"
+            title="Hover to open • Click to pin Quick Disruption Launcher"
+          >
+            <svg class="toggle-chevron" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M15 18l-6-6 6-6"/>
+            </svg>
+            <span class="toggle-vertical-label">Quick Disruption</span>
+            <svg class="toggle-bolt" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+          </button>
+
+          <aside
+            class="overview-launcher-drawer"
+            id="overviewLauncherDrawer"
+            aria-label="Quick Disruption Launcher"
+            aria-hidden="true"
+          >
+            <div class="launcher-drawer-header">
+              <div class="launcher-drawer-title-row">
+                <div class="launcher-drawer-heading">
+                  <span class="launcher-drawer-kicker">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                    Command Control
+                  </span>
                   <h2>Quick Disruption Launcher</h2>
                   <p class="card-sub">Trigger an institutional failure scenario to run BFS propagation &amp; recovery</p>
                 </div>
-                <button class="btn btn-sm btn-outline" data-goto="simulator">Custom Failure</button>
+                <div class="launcher-drawer-header-actions">
+                  <span class="launcher-pin-badge hidden" id="launcherPinBadge">Pinned</span>
+                  <button type="button" class="launcher-close-btn" id="btnCloseLauncherDrawer" aria-label="Close Quick Disruption Launcher" title="Close (Esc)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                  </button>
+                </div>
               </div>
-              <div class="quick-scenarios" id="overviewQuickScenarios"></div>
+              <div class="launcher-drawer-toolbar">
+                <button type="button" class="btn btn-sm btn-outline" data-goto="simulator">Custom Failure</button>
+                <span class="launcher-hint-text" id="launcherHintText">Click tab to pin &bull; Esc to close</span>
+              </div>
             </div>
-          </div>
+            <div class="launcher-drawer-body">
+              <div class="quick-scenarios drawer-scenarios-list" id="overviewQuickScenarios"></div>
+            </div>
+          </aside>
 
           <div class="grid-two-col">
             <div class="card">
