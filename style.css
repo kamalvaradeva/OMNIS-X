@@ -2185,3 +2185,395 @@ html, body {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ==========================================================================
+   EDUCATIONAL PLATFORM CLAYMORPHIC SKIN (uupm.cc/demo/educational-platform)
+   Warm cream backdrop, pastel peach/sky/mint/lavender accents,
+   3px #2D3748 outlines, soft 3D clay offset shadows & #22C55E green CTAs.
+   ========================================================================== */
+
+:root {
+  --clay-ink: #2d3748;
+  --clay-canvas: #fff7f2;
+  --clay-peach: #fdbcb4;
+  --clay-sky: #add8e6;
+  --clay-cta: #22c55e;
+  --clay-cta-hover: #16a34a;
+  --clay-mint: #98ff98;
+  --clay-lavender: #e6e6fa;
+  --clay-shadow: 5px 5px 0px 0px #2d3748, inset 0 -4px 0px 0px rgba(0, 0, 0, 0.06);
+  --clay-shadow-sm: 3px 3px 0px 0px #2d3748;
+}
+
+html, body {
+  font-family: "Nunito", "Fredoka", "DM Sans", "Segoe UI", system-ui, sans-serif;
+  background: var(--clay-canvas);
+  color: #0f172a;
+}
+
+h1, h2, h3, .brand-title, .kpi-value, .cert-headline, .page-title {
+  font-family: "Fredoka", "Nunito", "Trebuchet MS", system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.app-shell, .main-area, .content-scroll {
+  background: var(--clay-canvas);
+}
+
+/* Floating Clay Sidebar */
+.sidebar {
+  width: 266px;
+  margin: 14px 0 14px 14px;
+  border-radius: 24px;
+  background: #ffffff;
+  color: var(--clay-ink);
+  border: 3px solid var(--clay-ink);
+  box-shadow: var(--clay-shadow);
+  overflow: hidden;
+}
+
+.sidebar-brand {
+  border-bottom: 2px solid #e2e8f0;
+  padding: 18px 18px 14px;
+}
+
+.brand-mark {
+  background: var(--clay-peach);
+  color: var(--clay-ink);
+  border: 3px solid var(--clay-ink);
+  border-radius: 14px;
+  box-shadow: var(--clay-shadow-sm);
+}
+
+.brand-title {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.brand-sub {
+  color: #475569;
+  font-weight: 700;
+}
+
+.system-pill {
+  border-radius: 9999px;
+  border: 2.5px solid var(--clay-ink);
+  font-weight: 800;
+  box-shadow: 2px 2px 0 var(--clay-ink);
+}
+
+.system-pill.status-operational {
+  background: var(--clay-mint);
+  color: #14532d;
+  border-color: var(--clay-ink);
+}
+
+.system-pill.status-disrupted {
+  background: var(--clay-peach);
+  color: #7f1d1d;
+  border-color: var(--clay-ink);
+}
+
+.system-pill.status-recovered {
+  background: var(--clay-sky);
+  color: #0f172a;
+  border-color: var(--clay-ink);
+}
+
+.nav-item {
+  border: 2px solid transparent;
+  border-radius: 14px;
+  color: #334155;
+  font-weight: 700;
+  padding: 9px 12px;
+}
+
+.nav-item:hover {
+  background: var(--clay-canvas);
+  color: #0f172a;
+  border-color: var(--clay-ink);
+}
+
+.nav-item.active {
+  background: var(--clay-sky);
+  color: #0f172a;
+  font-weight: 800;
+  border: 2.5px solid var(--clay-ink);
+  box-shadow: var(--clay-shadow-sm);
+}
+
+.nav-badge {
+  background: #ef4444;
+  border: 2px solid var(--clay-ink);
+  color: #ffffff;
+}
+
+.sidebar-footer {
+  background: var(--clay-lavender);
+  border-top: 2.5px solid var(--clay-ink);
+  color: var(--clay-ink);
+}
+
+.sidebar-meta-row {
+  color: #334155;
+  font-weight: 600;
+}
+
+.sidebar-meta-row strong {
+  color: #0f172a;
+}
+
+.text-green {
+  color: #15803d;
+}
+
+/* Floating Clay Topbar */
+.topbar {
+  margin: 14px 22px 0;
+  border-radius: 22px;
+  background: #ffffff;
+  border: 3px solid var(--clay-ink);
+  box-shadow: var(--clay-shadow);
+  padding: 13px 20px;
+}
+
+.content-scroll {
+  padding: 16px 22px 36px;
+}
+
+.toast-banner {
+  margin: 12px 22px 0;
+  border-radius: 16px;
+  border: 2.5px solid var(--clay-ink);
+  box-shadow: var(--clay-shadow-sm);
+  font-weight: 700;
+  background: var(--clay-sky);
+  color: #0f172a;
+}
+
+.toast-banner.banner-danger {
+  background: var(--clay-peach);
+  color: #7f1d1d;
+  border-color: var(--clay-ink);
+}
+
+.toast-banner.banner-success {
+  background: var(--clay-mint);
+  color: #14532d;
+  border-color: var(--clay-ink);
+}
+
+/* Clay Cards */
+.card {
+  background: #ffffff;
+  border: 2.5px solid var(--clay-ink);
+  border-radius: 22px;
+  box-shadow: var(--clay-shadow);
+  padding: 18px 20px;
+}
+
+.kpi-card {
+  background: #ffffff;
+  border: 2.5px solid var(--clay-ink);
+  border-top: 6px solid var(--clay-sky);
+  border-radius: 18px;
+  box-shadow: var(--clay-shadow-sm);
+}
+
+.kpi-card.kpi-green { border-top-color: var(--clay-cta); }
+.kpi-card.kpi-red { border-top-color: #f87171; }
+.kpi-card.kpi-orange { border-top-color: var(--clay-peach); }
+.kpi-card.kpi-blue { border-top-color: var(--clay-sky); }
+
+/* Tactile Buttons */
+.btn {
+  border: 2.5px solid var(--clay-ink);
+  border-radius: 15px;
+  font-weight: 800;
+  box-shadow: var(--clay-shadow-sm);
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.btn:hover:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--clay-ink);
+}
+
+.btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--clay-ink);
+}
+
+.btn-primary {
+  background: var(--clay-cta);
+  color: #ffffff;
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--clay-cta-hover);
+}
+
+.btn-secondary {
+  background: var(--clay-sky);
+  color: #0f172a;
+}
+.btn-secondary:hover:not(:disabled) {
+  background: #93cbe0;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.btn-outline {
+  background: #ffffff;
+  color: var(--clay-ink);
+  border-color: var(--clay-ink);
+}
+.btn-outline:hover:not(:disabled) {
+  background: var(--clay-lavender);
+}
+
+.btn-ghost {
+  background: var(--clay-canvas);
+  color: var(--clay-ink);
+  border-color: var(--clay-ink);
+}
+
+/* Badges & Pills */
+.badge,
+.pill-neutral,
+.health-pill,
+.constraint-pill,
+.cost-chip,
+.chip-tag {
+  border: 2px solid var(--clay-ink);
+  border-radius: 9999px;
+  font-weight: 800;
+}
+
+.health-pill {
+  background: var(--clay-lavender);
+  color: #0f172a;
+  box-shadow: 2px 2px 0 var(--clay-ink);
+}
+
+.badge-green, .constraint-pill { background: var(--clay-mint); color: #14532d; }
+.badge-blue { background: var(--clay-sky); color: #0f172a; }
+.badge-orange { background: #fde68a; color: #78350f; }
+.badge-red { background: var(--clay-peach); color: #7f1d1d; }
+.badge-gray, .pill-neutral { background: var(--clay-lavender); color: #1e293b; }
+
+/* Inputs & Selects */
+.select-input, .text-input, .time-input {
+  border: 2px solid var(--clay-ink);
+  border-radius: 12px;
+  background: #ffffff;
+  font-weight: 600;
+}
+
+/* Scenario Cards, Plan Cards, Gauges & Nested Surfaces */
+.scenario-btn,
+.scenario-card,
+.plan-card,
+.disruption-config-card,
+.readiness-cert-card,
+.ba-card,
+.ba-gauge-card,
+.ba-main-chart-col,
+.ba-viz-toolbar,
+.decision-item,
+.queue-item-card,
+.selector-box,
+.selected-failures-box,
+.live-preview-box,
+.inspector-panel,
+.svg-wrapper,
+.tt-panel {
+  border: 2.5px solid var(--clay-ink);
+  border-radius: 18px;
+  box-shadow: var(--clay-shadow-sm);
+}
+
+.plan-card.selected,
+.scenario-check-pill.checked,
+.tab-btn.active,
+.ba-tab-btn.active,
+.cal-mode-btn.active {
+  background: var(--clay-sky);
+  color: #0f172a;
+  border-color: var(--clay-ink);
+}
+
+.scenario-btn.active,
+.scenario-card.active-scenario {
+  background: var(--clay-peach);
+  border-color: var(--clay-ink);
+}
+
+.tab-btn,
+.ba-tab-btn,
+.cal-mode-btn,
+.scenario-check-pill {
+  border: 2px solid var(--clay-ink);
+  border-radius: 12px;
+  font-weight: 700;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* LearnHub Green Progress Bar (matching uupm.cc progress fill) */
+.audit-progress-track {
+  height: 12px;
+  background: #e2e8f0;
+  border: 2px solid var(--clay-ink);
+  border-radius: 9999px;
+}
+
+.audit-progress-fill {
+  background: var(--clay-cta);
+  border-radius: 9999px;
+}
+
+.readiness-cert-card {
+  border-left: 6px solid var(--clay-cta);
+  background: #fffdfb;
+}
+
+.cert-kicker {
+  color: #15803d;
+}
+
+.ba-after {
+  color: #15803d;
+}
+
+/* Keep SVG legend & graph crisp over warm cream tint */
+.legend-row {
+  border: 2px solid var(--clay-ink);
+  border-radius: 14px;
+  background: var(--clay-canvas);
+}
+
+.svg-wrapper {
+  background: #fffdfb;
+}
+
+.tt-grid-table th {
+  background: var(--clay-ink);
+  color: #ffffff;
+}
+
+@media (max-width: 960px) {
+  .sidebar {
+    margin: 0;
+    border-radius: 0 22px 22px 0;
+  }
+  .topbar {
+    margin: 10px 14px 0;
+  }
+  .content-scroll {
+    padding: 12px 14px 28px;
+  }
+}
