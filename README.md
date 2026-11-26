@@ -1,5 +1,5 @@
 
-# OMNIS-X — JGIT Campus Digital Twin
+# OMNIS-X — Campus Digital Twin
 
 ## Project Description
 
