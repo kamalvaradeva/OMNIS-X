@@ -56,7 +56,7 @@ Node.js and npm are not required for the current vanilla JavaScript architecture
 7. Open `index.html` using Live Server.
 8. Access the application at:
 
-   http://127.0.0.1:5500/
+   https://omnis-x.vercel.app/
 
 ## Demo Credentials
 
